@@ -2,6 +2,8 @@
 
 Aplicación Next.js para consolidar datos de liga, ejecutar análisis determinísticos en paralelo y producir decisiones Fantasy explicables. Si no recibe una fuente actual de la liga, entra en modo **DEGRADED/STALE** y bloquea recomendaciones accionables.
 
+Producción: https://q-ecru-nu.vercel.app
+
 ## Desarrollo
 
 ```bash
