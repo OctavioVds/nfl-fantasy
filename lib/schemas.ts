@@ -6,7 +6,7 @@ export const externalPlayerSchema = z.object({
   team: z.string().min(1).max(4),
   position: z.enum(["QB", "RB", "WR", "TE", "DST", "K"]),
   slot: z.string().min(1),
-  projection: z.number().finite().nonnegative().optional(),
+  projection: z.number().finite().optional(),
   futureProjection: z.number().finite().nonnegative().optional(),
   opportunityScore: z.number().finite().min(0).max(100).optional(),
   depthOrder: z.number().int().min(1).max(20).optional(),
