@@ -34,6 +34,11 @@ describe("waiver decisions", () => {
     const moves = waiverRecommendations(roster, [p("New DST", "DST", 10, "FA")]);
     expect(moves[0]?.alternative).toBe("Old DST");
   });
+  it("surfaces upgrades across positions before same-position alternatives", () => {
+    const roster = [p("TE Drop", "TE", 3), p("WR Drop", "WR", 3), p("Other", "RB", 3)];
+    const moves = waiverRecommendations(roster, [p("TE Best", "TE", 15, "FA"), p("TE Second", "TE", 14, "FA"), p("WR Best", "WR", 10, "FA")]);
+    expect(moves.slice(0, 2).map((move) => move.target)).toEqual(["TE Best", "WR Best"]);
+  });
 });
 
 describe("lineup legality", () => {

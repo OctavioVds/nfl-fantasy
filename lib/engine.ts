@@ -86,7 +86,7 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
   if (!dropPool.length || !freeAgents.length) return [];
   const quarterbackCount = roster.filter((p) => p.position === "QB" && p.slot !== "IR").length;
 
-  return freeAgents.filter((candidate) => !(candidate.position === "QB" && quarterbackCount >= 2)).map((candidate) => {
+  const ranked = freeAgents.filter((candidate) => !(candidate.position === "QB" && quarterbackCount >= 2)).map((candidate) => {
     const specialTeamsReplacement = ["DST", "K"].includes(candidate.position)
       ? roster.filter((p) => p.position === candidate.position && !p.locked)
       : [];
@@ -99,10 +99,17 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
     const dataSignals = [candidate.projection, candidate.futureProjection, candidate.opportunityScore, candidate.depthOrder].filter((v) => v != null).length;
     const confidenceScore = Math.min(9, Math.max(4, Math.round(4 + Math.max(0, net) / 1.5 + dataSignals / 2)));
     return { candidate, drop, net, candidateValue, confidenceScore };
-  }).filter((row) => row.net >= 1)
-    .sort((a, b) => b.net - a.net)
-    .slice(0, 3)
-    .map(({ candidate, drop, net, confidenceScore }) => ({
+  }).filter((row) => row.net >= 1).sort((a, b) => b.net - a.net);
+  const selected = [] as typeof ranked;
+  for (const row of ranked) {
+    if (!selected.some((item) => item.candidate.position === row.candidate.position)) selected.push(row);
+    if (selected.length === 3) break;
+  }
+  for (const row of ranked) {
+    if (selected.length === 3) break;
+    if (!selected.includes(row)) selected.push(row);
+  }
+  return selected.map(({ candidate, drop, net, confidenceScore }) => ({
       id: `add-${candidate.canonicalPlayerId}-drop-${drop.canonicalPlayerId}`,
       kind: "ADD" as const,
       headline: `ADD ${candidate.name} · DROP ${drop.name}`,
