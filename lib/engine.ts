@@ -70,4 +70,50 @@ export function topLineupRecommendations(players: RosterPlayer[]): Recommendatio
   return moves.slice(0, 3);
 }
 
+function playerValue(player: RosterPlayer, roster: RosterPlayer[]) {
+  const weekly = player.projection ?? 0;
+  const future = player.futureProjection ?? weekly;
+  const opportunity = (player.opportunityScore ?? 50) / 20;
+  const scarcity = player.position === "RB" ? 2 : player.position === "WR" ? 1.5 : player.position === "TE" ? 1 : 0;
+  const injury = /^(O|OUT|D|DOUBTFUL|IR)$/i.test(player.injury ?? "") ? -6 : /^(Q|QUESTIONABLE)$/i.test(player.injury ?? "") ? -1 : 0;
+  const depth = player.depthOrder ? Math.max(-2, 2 - player.depthOrder) : 0;
+  const qbPenalty = player.position === "QB" && roster.filter((p) => p.position === "QB").length >= 2 ? -3 : 0;
+  return weekly * 0.55 + future * 0.3 + opportunity + scarcity + depth + injury + qbPenalty;
+}
+
+export function waiverRecommendations(roster: RosterPlayer[], freeAgents: RosterPlayer[]): Recommendation[] {
+  const dropPool = roster.filter((p) => p.slot === "Bench" && !p.locked);
+  if (!dropPool.length || !freeAgents.length) return [];
+
+  return freeAgents.map((candidate) => {
+    const compatible = dropPool.filter((p) => p.position === candidate.position);
+    const pool = compatible.length ? compatible : dropPool;
+    const drop = [...pool].sort((a, b) => playerValue(a, roster) - playerValue(b, roster))[0];
+    const candidateValue = playerValue(candidate, roster);
+    const dropValue = playerValue(drop, roster);
+    const net = round(candidateValue - dropValue);
+    const dataSignals = [candidate.projection, candidate.futureProjection, candidate.opportunityScore, candidate.depthOrder].filter((v) => v != null).length;
+    const confidenceScore = Math.min(9, Math.max(4, Math.round(4 + Math.max(0, net) / 1.5 + dataSignals / 2)));
+    return { candidate, drop, net, candidateValue, confidenceScore };
+  }).filter((row) => row.net >= 1)
+    .sort((a, b) => b.net - a.net)
+    .slice(0, 3)
+    .map(({ candidate, drop, net, confidenceScore }) => ({
+      id: `add-${candidate.canonicalPlayerId}-drop-${drop.canonicalPlayerId}`,
+      kind: "ADD" as const,
+      headline: `ADD ${candidate.name} · DROP ${drop.name}`,
+      target: candidate.name,
+      alternative: drop.name,
+      confidence: confidenceScore >= 8 ? "HIGH" as const : confidenceScore >= 6 ? "MEDIUM" as const : "LOW" as const,
+      confidenceScore,
+      risk: "La disponibilidad y el papel pueden cambiar antes de procesar waivers; confirma noticias cercanas al cierre.",
+      why: [
+        { type: "FACT" as const, text: `${candidate.name} fue confirmado disponible por la fuente de la liga.` },
+        { type: "MODEL" as const, text: `Ganancia de valor estimada sobre ${drop.name}: +${net}.` },
+        ...(candidate.opportunityScore != null ? [{ type: "INFERENCE" as const, text: `Opportunity score normalizado: ${candidate.opportunityScore}/100.` }] : []),
+      ],
+      actionable: true,
+    }));
+}
+
 const round = (value: number) => Math.round(value * 10) / 10;

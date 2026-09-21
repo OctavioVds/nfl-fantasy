@@ -73,6 +73,7 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
 }
 
 function CommandView({ snapshot }: { snapshot: SyncSnapshot }) {
+  const bestWaiver = snapshot.recommendations.find((item) => item.kind === "ADD");
   return <>
     <section className="score-strip">
       <Metric label="Mi proyección" value={snapshot.projectedScore == null ? "—" : snapshot.projectedScore.toFixed(1)} unit="PTS" />
@@ -87,7 +88,7 @@ function CommandView({ snapshot }: { snapshot: SyncSnapshot }) {
       </section>
       <section className="panel intel-panel">
         <div className="panel-head"><h2>Estado de decisión</h2><span>{snapshot.health}</span></div>
-        <div className="intel-item"><b>Mejor waiver</b><p>{snapshot.sources.length ? "Se calculará contra agentes libres confirmados." : "Requiere disponibilidad actual de la liga."}</p></div>
+        <div className="intel-item"><b>Mejor waiver</b><p>{bestWaiver?.headline ?? (snapshot.sources.length ? "Sin mejora positiva validada." : "Requiere disponibilidad actual de la liga.")}</p></div>
         <div className="intel-item"><b>Mayor riesgo</b><p>{snapshot.freshness === "STALE" ? "La plantilla guardada puede no ser la actual." : "Noticias e inactivos cercanos al kickoff."}</p></div>
         <div className="intel-item"><b>Regla activa</b><p>Una recomendación no puede mover jugadores bloqueados.</p></div>
       </section>

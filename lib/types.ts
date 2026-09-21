@@ -31,6 +31,9 @@ export interface RosterPlayer {
   position: "QB" | "RB" | "WR" | "TE" | "DST" | "K";
   slot: string;
   projection?: number;
+  futureProjection?: number;
+  opportunityScore?: number;
+  depthOrder?: number;
   floor?: number;
   ceiling?: number;
   kickoff?: string;

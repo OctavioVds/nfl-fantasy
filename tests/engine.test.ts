@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateProjections, canonicalPlayerId, optimizeLineup, pprPoints, simulateWin } from "@/lib/engine";
+import { aggregateProjections, canonicalPlayerId, optimizeLineup, pprPoints, simulateWin, waiverRecommendations } from "@/lib/engine";
 import { isPlayerLocked, isStale, nflPeriod } from "@/lib/time";
 import type { PlayerProjection, RosterPlayer } from "@/lib/types";
 
@@ -11,6 +11,19 @@ describe("scoring and projections", () => {
     expect(aggregateProjections(inputs)).toMatchObject({ median: 25, sources: 2 });
   });
   it("simulates deterministically", () => expect(simulateWin(120, 120, 1000, 7)).toBeGreaterThanOrEqual(45));
+});
+
+describe("waiver decisions", () => {
+  const p = (name: string, position: RosterPlayer["position"], projection: number, slot = "Bench", futureProjection = projection): RosterPlayer => ({ canonicalPlayerId: canonicalPlayerId(name), name, team: "X", position, projection, futureProjection, slot });
+  it("only recommends confirmed available players with positive net value", () => {
+    const moves = waiverRecommendations([p("Drop", "WR", 7), p("Hold", "RB", 14)], [p("Add", "WR", 13, "FA", 14)]);
+    expect(moves[0]).toMatchObject({ kind: "ADD", target: "Add", alternative: "Drop", actionable: true });
+  });
+  it("does not recommend a worse free agent", () => expect(waiverRecommendations([p("Hold", "WR", 12)], [p("Worse", "WR", 5, "FA")])).toEqual([]));
+  it("never drops a starter", () => {
+    const moves = waiverRecommendations([p("Starter", "WR", 1, "WR"), p("Bench", "RB", 5)], [p("Upgrade", "WR", 20, "FA")]);
+    expect(moves[0]?.alternative).toBe("Bench");
+  });
 });
 
 describe("lineup legality", () => {

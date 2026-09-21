@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { captureServerEvent } from "./analytics";
 import { saveSnapshot } from "./db";
-import { aggregateProjections, canonicalPlayerId, simulateWin, topLineupRecommendations } from "./engine";
+import { aggregateProjections, canonicalPlayerId, simulateWin, topLineupRecommendations, waiverRecommendations } from "./engine";
 import { fallbackSnapshot } from "./fallback-data";
 import { fetchEspnScoreboard } from "./providers/espn";
 import { fetchSleeperTrending } from "./providers/sleeper";
+import { fetchSportsDataIoProjections } from "./providers/sportsdataio";
 import type { ExternalSyncPayload } from "./schemas";
 import { isPlayerLocked, isStale, nflPeriod } from "./time";
 import type { AgentRun, RosterPlayer, SyncSnapshot } from "./types";
@@ -28,6 +29,7 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     runAgent("WaiverMarket", () => fetchSleeperTrending()),
     runAgent("Injuries", async () => []),
     runAgent("ProjectionEnsemble", async () => external?.roster ?? []),
+    runAgent("SportsDataIO", () => fetchSportsDataIoProjections(period.season, period.week)),
     runAgent("BreakingNews", async () => []),
   ]);
   const league = external;
@@ -46,14 +48,34 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
 
   const roster: RosterPlayer[] = league.roster.map((p) => ({
     canonicalPlayerId: canonicalPlayerId(p.name, p.team), name: p.name, team: p.team, position: p.position,
-    slot: p.slot, projection: p.projection, kickoff: p.kickoff, locked: isPlayerLocked(p.kickoff), injury: p.injury,
+    slot: p.slot, projection: p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore,
+    depthOrder: p.depthOrder, kickoff: p.kickoff, locked: isPlayerLocked(p.kickoff), injury: p.injury,
   }));
+  const sportsData = (firstWave.find((r) => r.name === "SportsDataIO")?.data ?? []) as Awaited<ReturnType<typeof fetchSportsDataIoProjections>>;
+  const sportsById = new Map(sportsData.map((p) => [canonicalPlayerId(p.name, p.team), p]));
   const projectionGroups = new Map<string, ReturnType<typeof aggregateProjections>>();
-  for (const p of roster) if (p.projection != null) projectionGroups.set(p.canonicalPlayerId, aggregateProjections([{ canonicalPlayerId: p.canonicalPlayerId, name: p.name, team: p.team, position: p.position, source: league.source, points: p.projection, sourceTimestamp: league.sourceTimestamp }]));
+  for (const p of roster) {
+    const projections = [];
+    if (p.projection != null) projections.push({ canonicalPlayerId: p.canonicalPlayerId, name: p.name, team: p.team, position: p.position, source: league.source, points: p.projection, sourceTimestamp: league.sourceTimestamp });
+    const sports = sportsById.get(p.canonicalPlayerId);
+    if (sports) projections.push({ canonicalPlayerId: p.canonicalPlayerId, name: p.name, team: p.team, position: p.position, source: "sportsdataio", points: sports.points, sourceTimestamp: started.toISOString() });
+    if (projections.length) projectionGroups.set(p.canonicalPlayerId, aggregateProjections(projections));
+  }
   for (const p of roster) { const agg = projectionGroups.get(p.canonicalPlayerId); if (agg) { p.projection = agg.median; p.floor = agg.floor; p.ceiling = agg.ceiling; } }
+  const freeAgents: RosterPlayer[] = league.freeAgents.map((p) => {
+    const id = canonicalPlayerId(p.name, p.team);
+    const sports = sportsById.get(id);
+    const projections = [
+      ...(p.projection != null ? [{ canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, source: league.source, points: p.projection, sourceTimestamp: league.sourceTimestamp }] : []),
+      ...(sports ? [{ canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, source: "sportsdataio", points: sports.points, sourceTimestamp: started.toISOString() }] : []),
+    ];
+    const agg = aggregateProjections(projections);
+    return { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: "FA", projection: agg?.median ?? p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, floor: agg?.floor, ceiling: agg?.ceiling, kickoff: p.kickoff ?? sports?.kickoff, locked: isPlayerLocked(p.kickoff ?? sports?.kickoff), injury: p.injury ?? sports?.injury };
+  });
 
   const secondWave = await Promise.all([
     runAgent("LineupOptimization", async () => topLineupRecommendations(roster)),
+    runAgent("WaiverRecommendations", async () => waiverRecommendations(roster, freeAgents)),
     runAgent("OpponentScout", async () => league.opponentProjection ?? null),
     runAgent("TradeFinder", async () => []),
     runAgent("BreakoutDetection", async () => []),
@@ -62,6 +84,7 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     runAgent("KickerStreaming", async () => []),
   ]);
   const lineupActions = (secondWave.find((r) => r.name === "LineupOptimization")?.data ?? []) as ReturnType<typeof topLineupRecommendations>;
+  const waiverActions = (secondWave.find((r) => r.name === "WaiverRecommendations")?.data ?? []) as ReturnType<typeof waiverRecommendations>;
   const projectedScore = roster.filter((p) => !["Bench", "IR"].includes(p.slot)).reduce((sum, p) => sum + (p.projection ?? 0), 0);
   const opp = league.opponentProjection ?? null;
   const stale = isStale(league.sourceTimestamp, 30 * 60_000, started);
@@ -73,8 +96,8 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     health: failed.length ? "DEGRADED" : "HEALTHY",
     projectedScore: Math.round(projectedScore * 10) / 10, opponentScore: opp,
     winProbability: opp == null ? null : simulateWin(projectedScore, opp),
-    roster, recommendations: lineupActions, agents: [...firstWave, ...secondWave].map((r) => r.run),
-    sources: [{ name: league.source, sourceTimestamp: league.sourceTimestamp, fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" }],
+    roster, recommendations: [...waiverActions, ...lineupActions].slice(0, 3).map((r) => ({ ...r, actionable: !stale })), agents: [...firstWave, ...secondWave].map((r) => r.run),
+    sources: [{ name: league.source, sourceTimestamp: league.sourceTimestamp, fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" }, ...(sportsData.length ? [{ name: "sportsdataio", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : [])],
     warnings: [...(stale ? ["STALE DATA WARNING: la fuente de liga supera 30 minutos."] : []), ...(failed.length ? [`DEGRADED DATA: ${failed.map((r) => r.name).join(", ")}.`] : [])],
   };
   await saveSnapshot(snapshot);

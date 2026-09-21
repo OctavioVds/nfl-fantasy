@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/providers/espn", () => ({ fetchEspnScoreboard: vi.fn().mockRejectedValue(new Error("offline")) }));
 vi.mock("@/lib/providers/sleeper", () => ({ fetchSleeperTrending: vi.fn().mockResolvedValue([]) }));
+vi.mock("@/lib/providers/sportsdataio", () => ({ fetchSportsDataIoProjections: vi.fn().mockResolvedValue([]) }));
 vi.mock("@/lib/db", () => ({ saveSnapshot: vi.fn().mockResolvedValue({ persisted: false }) }));
 vi.mock("@/lib/analytics", () => ({ captureServerEvent: vi.fn().mockResolvedValue(undefined) }));
 
