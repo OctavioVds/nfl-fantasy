@@ -25,6 +25,15 @@ describe("waiver decisions", () => {
     const moves = waiverRecommendations([p("Starter", "WR", 1, "WR"), p("Bench", "RB", 5)], [p("Upgrade", "WR", 20, "FA")]);
     expect(moves[0]?.alternative).toBe("Bench");
   });
+  it("does not add a third quarterback in a one-QB roster", () => {
+    const roster = [p("QB1", "QB", 20, "QB"), p("QB2", "QB", 18), p("Bench", "WR", 5)];
+    expect(waiverRecommendations(roster, [p("QB3", "QB", 30, "FA")])).toEqual([]);
+  });
+  it("streams defense by replacing the existing unlocked defense", () => {
+    const roster = [p("Old DST", "DST", 4, "DST"), p("Bench", "WR", 2)];
+    const moves = waiverRecommendations(roster, [p("New DST", "DST", 10, "FA")]);
+    expect(moves[0]?.alternative).toBe("Old DST");
+  });
 });
 
 describe("lineup legality", () => {

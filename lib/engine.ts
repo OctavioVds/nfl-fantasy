@@ -84,10 +84,14 @@ function playerValue(player: RosterPlayer, roster: RosterPlayer[]) {
 export function waiverRecommendations(roster: RosterPlayer[], freeAgents: RosterPlayer[]): Recommendation[] {
   const dropPool = roster.filter((p) => p.slot === "Bench" && !p.locked);
   if (!dropPool.length || !freeAgents.length) return [];
+  const quarterbackCount = roster.filter((p) => p.position === "QB" && p.slot !== "IR").length;
 
-  return freeAgents.map((candidate) => {
+  return freeAgents.filter((candidate) => !(candidate.position === "QB" && quarterbackCount >= 2)).map((candidate) => {
+    const specialTeamsReplacement = ["DST", "K"].includes(candidate.position)
+      ? roster.filter((p) => p.position === candidate.position && !p.locked)
+      : [];
     const compatible = dropPool.filter((p) => p.position === candidate.position);
-    const pool = compatible.length ? compatible : dropPool;
+    const pool = specialTeamsReplacement.length ? specialTeamsReplacement : compatible.length ? compatible : dropPool;
     const drop = [...pool].sort((a, b) => playerValue(a, roster) - playerValue(b, roster))[0];
     const candidateValue = playerValue(candidate, roster);
     const dropValue = playerValue(drop, roster);
