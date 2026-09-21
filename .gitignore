@@ -1,7 +1,8 @@
 node_modules
 .next
 .vercel
-.env*
+.agents
+skills-lock.json
 !.env.example
 coverage
 work/npm-cache
@@ -10,3 +11,4 @@ work/npm-cache
 .DS_Store
 
 .vercel
+.env*

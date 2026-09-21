@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { captureServerEvent } from "./analytics";
-import { saveSnapshot } from "./db";
+import { getLatestExternalIngest, saveExternalIngest, saveSnapshot } from "./db";
 import { aggregateProjections, canonicalPlayerId, simulateWin, topLineupRecommendations, waiverRecommendations } from "./engine";
 import { fallbackSnapshot } from "./fallback-data";
-import { fetchEspnScoreboard } from "./providers/espn";
+import { fetchEspnScoreboard, mapEspnTeamContexts } from "./providers/espn";
 import { fetchSleeperTrending } from "./providers/sleeper";
 import { fetchSportsDataIoProjections } from "./providers/sportsdataio";
 import type { ExternalSyncPayload } from "./schemas";
+import { externalSyncSchema } from "./schemas";
 import { isPlayerLocked, isStale, nflPeriod } from "./time";
 import type { AgentRun, RosterPlayer, SyncSnapshot } from "./types";
 
@@ -20,19 +21,24 @@ async function runAgent(name: string, fn: () => Promise<unknown>): Promise<Agent
 
 export async function synchronize(external?: ExternalSyncPayload): Promise<SyncSnapshot> {
   const started = new Date();
-  const period = external ? { season: external.league.season, week: external.league.week } : nflPeriod(started);
+  let league = external;
+  if (external) await saveExternalIngest(external);
+  else {
+    const stored = externalSyncSchema.safeParse(await getLatestExternalIngest());
+    if (stored.success) league = stored.data;
+  }
+  const period = league ? { season: league.league.season, week: league.league.week } : nflPeriod(started);
   await captureServerEvent("sync_started", period);
 
   const firstWave = await Promise.all([
-    runAgent("LeagueIntelligence", async () => external ?? null),
+    runAgent("LeagueIntelligence", async () => league ?? null),
     runAgent("Schedule", () => fetchEspnScoreboard(period.season, period.week)),
     runAgent("WaiverMarket", () => fetchSleeperTrending()),
     runAgent("Injuries", async () => []),
-    runAgent("ProjectionEnsemble", async () => external?.roster ?? []),
+    runAgent("ProjectionEnsemble", async () => league?.roster ?? []),
     runAgent("SportsDataIO", () => fetchSportsDataIoProjections(period.season, period.week)),
     runAgent("BreakingNews", async () => []),
   ]);
-  const league = external;
   if (!league) {
     const base = fallbackSnapshot();
     base.id = randomUUID();
@@ -46,11 +52,17 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     return base;
   }
 
-  const roster: RosterPlayer[] = league.roster.map((p) => ({
+  const scheduleEvents = (firstWave.find((r) => r.name === "Schedule")?.data ?? []) as unknown[];
+  const scheduleByTeam = mapEspnTeamContexts(scheduleEvents);
+  const roster: RosterPlayer[] = league.roster.map((p) => {
+    const game = scheduleByTeam.get(p.team.toUpperCase());
+    const kickoff = p.kickoff ?? game?.kickoff;
+    return ({
     canonicalPlayerId: canonicalPlayerId(p.name, p.team), name: p.name, team: p.team, position: p.position,
     slot: p.slot, projection: p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore,
-    depthOrder: p.depthOrder, kickoff: p.kickoff, locked: isPlayerLocked(p.kickoff), injury: p.injury,
-  }));
+    depthOrder: p.depthOrder, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue,
+    weather: game?.weather, locked: isPlayerLocked(kickoff), injury: p.injury,
+  }); });
   const sportsData = (firstWave.find((r) => r.name === "SportsDataIO")?.data ?? []) as Awaited<ReturnType<typeof fetchSportsDataIoProjections>>;
   const sportsById = new Map(sportsData.map((p) => [canonicalPlayerId(p.name, p.team), p]));
   const projectionGroups = new Map<string, ReturnType<typeof aggregateProjections>>();
@@ -70,7 +82,9 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
       ...(sports ? [{ canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, source: "sportsdataio", points: sports.points, sourceTimestamp: started.toISOString() }] : []),
     ];
     const agg = aggregateProjections(projections);
-    return { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: "FA", projection: agg?.median ?? p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, floor: agg?.floor, ceiling: agg?.ceiling, kickoff: p.kickoff ?? sports?.kickoff, locked: isPlayerLocked(p.kickoff ?? sports?.kickoff), injury: p.injury ?? sports?.injury };
+    const game = scheduleByTeam.get(p.team.toUpperCase());
+    const kickoff = p.kickoff ?? sports?.kickoff ?? game?.kickoff;
+    return { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: "FA", projection: agg?.median ?? p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, floor: agg?.floor, ceiling: agg?.ceiling, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue, weather: game?.weather, locked: isPlayerLocked(kickoff), injury: p.injury ?? sports?.injury };
   });
 
   const secondWave = await Promise.all([
@@ -97,7 +111,7 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     projectedScore: Math.round(projectedScore * 10) / 10, opponentScore: opp,
     winProbability: opp == null ? null : simulateWin(projectedScore, opp),
     roster, recommendations: [...waiverActions, ...lineupActions].slice(0, 3).map((r) => ({ ...r, actionable: !stale })), agents: [...firstWave, ...secondWave].map((r) => r.run),
-    sources: [{ name: league.source, sourceTimestamp: league.sourceTimestamp, fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" }, ...(sportsData.length ? [{ name: "sportsdataio", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : [])],
+    sources: [{ name: league.source, sourceTimestamp: league.sourceTimestamp, fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" }, ...(scheduleEvents.length ? [{ name: "ESPN NFL Scoreboard", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...(sportsData.length ? [{ name: "sportsdataio", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : [])],
     warnings: [...(stale ? ["STALE DATA WARNING: la fuente de liga supera 30 minutos."] : []), ...(failed.length ? [`DEGRADED DATA: ${failed.map((r) => r.name).join(", ")}.`] : [])],
   };
   await saveSnapshot(snapshot);

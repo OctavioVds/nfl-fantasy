@@ -131,7 +131,9 @@ function Metric({ label, value, unit, compact = false }: { label: string; value:
 
 function PlayerRow({ player, historical }: { player: SyncSnapshot["roster"][number]; historical: boolean }) {
   const status = historical ? "HISTÓRICO" : player.locked ? "LOCKED" : "ABIERTO";
-  return <div className="player-row"><span className="slot">{player.slot}</span><div><b>{player.name}</b><small>{player.team} · {player.position}{player.injury ? ` · ${player.injury}` : ""}</small></div><strong>{player.projection?.toFixed(1) ?? "—"}</strong><span className={historical ? "historical" : player.locked ? "locked" : "open"}>{status}</span></div>;
+  const matchup = player.opponent ? `${player.homeAway === "away" ? "@" : "vs"} ${player.opponent}` : null;
+  const conditions = [player.venue, player.weather].filter(Boolean).join(" · ");
+  return <div className="player-row"><span className="slot">{player.slot}</span><div><b>{player.name}</b><small>{player.team} · {player.position}{matchup ? ` · ${matchup}` : ""}{player.injury ? ` · ${player.injury}` : ""}</small>{conditions && <small className="conditions">{conditions}</small>}</div><strong>{player.projection?.toFixed(1) ?? "—"}</strong><span className={historical ? "historical" : player.locked ? "locked" : "open"}>{status}</span></div>;
 }
 
 function ActionCard({ action, index }: { action: SyncSnapshot["recommendations"][number]; index: number }) {

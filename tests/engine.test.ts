@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { aggregateProjections, canonicalPlayerId, optimizeLineup, pprPoints, simulateWin, waiverRecommendations } from "@/lib/engine";
 import { isPlayerLocked, isStale, nflPeriod } from "@/lib/time";
 import type { PlayerProjection, RosterPlayer } from "@/lib/types";
+import { mapEspnTeamContexts } from "@/lib/providers/espn";
 
 describe("scoring and projections", () => {
   it("calculates full PPR scoring", () => expect(pprPoints({ rushYards: 50, receptions: 5, recYards: 60, rushTd: 1 })).toBe(22));
@@ -45,4 +46,12 @@ describe("time, identity and freshness", () => {
   it("uses the real instant across timezones for locks", () => expect(isPlayerLocked("2026-09-20T12:00:00-05:00", new Date("2026-09-20T17:00:01Z"))).toBe(true));
   it("marks stale timestamps", () => expect(isStale("2026-09-20T10:00:00Z", 60_000, new Date("2026-09-20T10:02:00Z"))).toBe(true));
   it("canonicalizes accents and punctuation", () => expect(canonicalPlayerId("Eddy Piñeiro", "SF")).toBe("eddy-pineiro-sf"));
+});
+
+describe("ESPN schedule context", () => {
+  it("maps opponent, venue, home/away and weather by team", () => {
+    const result = mapEspnTeamContexts([{ date: "2026-09-20T17:00:00Z", competitions: [{ venue: { fullName: "Example Field" }, weather: { displayValue: "Cloudy, 68°" }, competitors: [{ homeAway: "home", team: { abbreviation: "SF" } }, { homeAway: "away", team: { abbreviation: "MIA" } }] }] }]);
+    expect(result.get("SF")).toMatchObject({ opponent: "MIA", homeAway: "home", venue: "Example Field", weather: "Cloudy, 68°" });
+    expect(result.get("MIA")).toMatchObject({ opponent: "SF", homeAway: "away" });
+  });
 });

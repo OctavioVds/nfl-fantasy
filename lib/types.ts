@@ -37,6 +37,10 @@ export interface RosterPlayer {
   floor?: number;
   ceiling?: number;
   kickoff?: string;
+  opponent?: string;
+  homeAway?: "home" | "away";
+  venue?: string;
+  weather?: string;
   locked?: boolean;
   injury?: string;
 }

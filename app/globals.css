@@ -69,6 +69,7 @@ h1 span { color: var(--amber); }
 .player-row .slot { font: 600 .68rem var(--font-mono); color: var(--amber); }
 .player-row div { display: grid; gap: 2px; }
 .player-row small { color: var(--muted); font: 400 .72rem var(--font-mono); }
+.player-row small.conditions { color: #b8c7b9; font-size: .66rem; }
 .player-row > strong { font: 600 .92rem var(--font-mono); text-align: right; }
 .locked, .open, .historical { font: 600 .58rem var(--font-mono); text-align: right; color: var(--red); }
 .open { color: var(--green); }
