@@ -191,8 +191,11 @@ export function tradeRecommendations(roster: RosterPlayer[], partners: TradePart
   const candidates: { give: RosterPlayer; receive: RosterPlayer; partner: TradePartner; fit: number; gap: number }[] = [];
 
   for (const partner of partners) {
-    const targets = partner.roster.filter((p) => !p.locked && p.slot !== "IR" && ["RB", "WR", "TE"].includes(p.position));
+    const theirStarters = new Set(optimizeLineup(partner.roster).map((p) => p.canonicalPlayerId));
+    const targets = partner.roster.filter((p) => !p.locked && p.slot !== "IR" && !theirStarters.has(p.canonicalPlayerId) && ["RB", "WR", "TE"].includes(p.position));
     for (const give of offers) for (const receive of targets) {
+      const partnerBestQb = Math.max(0, ...partner.roster.filter((p) => p.position === "QB" && p.slot !== "IR").map((p) => p.projection ?? 0));
+      if (give.position === "QB" && (partnerBestQb >= (give.projection ?? 0) * 0.82 || partner.roster.filter((p) => p.position === "QB" && p.slot !== "IR").length > 1)) continue;
       const giveValue = playerValue(give, roster);
       const receiveValue = playerValue(receive, roster);
       if (giveValue <= 0 || receiveValue < giveValue * 0.82 || receiveValue > giveValue * 1.35) continue;

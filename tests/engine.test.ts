@@ -69,7 +69,7 @@ describe("lineup legality", () => {
   });
   it("builds concrete trade offers against rival rosters", () => {
     const roster = [p("QB1", "QB", 22, "QB"), p("QB2", "QB", 18), p("RB1", "RB", 15, "RB"), p("RB2", "RB", 14, "RB"), p("WR1", "WR", 14, "WR"), p("WR2", "WR", 13, "WR"), p("TE1", "TE", 10, "TE"), p("DST", "DST", 8, "DST"), p("K", "K", 7, "K")];
-    const partnerRoster = [p("Their QB", "QB", 10, "QB"), p("Target RB", "RB", 17), p("Their RB", "RB", 18, "RB"), p("Their WR1", "WR", 15, "WR"), p("Their WR2", "WR", 14, "WR"), p("Their TE", "TE", 9, "TE"), p("Their DST", "DST", 7, "DST"), p("Their K", "K", 6, "K")];
+    const partnerRoster = [p("Their QB", "QB", 8, "QB"), p("Target RB", "RB", 17), p("Their RB", "RB", 22, "RB"), p("Their RB2", "RB", 21, "RB"), p("Their WR1", "WR", 20, "WR"), p("Their WR2", "WR", 19, "WR"), p("Their WR3", "WR", 18), p("Their TE", "TE", 9, "TE"), p("Their DST", "DST", 7, "DST"), p("Their K", "K", 6, "K")];
     const trades = tradeRecommendations(roster, [{ teamId: "2", name: "Rival", roster: partnerRoster }]);
     expect(trades.some((move) => move.kind === "TRADE" && move.partner === "Rival")).toBe(true);
   });
