@@ -39,6 +39,12 @@ export const externalSyncSchema = z.object({
     }).optional(),
     roster: z.array(externalPlayerSchema).default([]),
   }).optional(),
+  nextOpponent: z.object({
+    week: z.number().int().min(1).max(18), teamId: z.string().min(1), name: z.string().min(1),
+    roster: z.array(externalPlayerSchema).default([]),
+  }).optional(),
+  currentScore: z.number().finite().optional(),
+  matchupComplete: z.boolean().optional(),
   tradePartners: z.array(z.object({
     teamId: z.string().min(1), name: z.string().min(1), roster: z.array(externalPlayerSchema),
   })).optional(),

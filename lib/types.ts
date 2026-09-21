@@ -96,6 +96,7 @@ export interface SyncSnapshot {
   projectedScore: number | null;
   opponentScore: number | null;
   winProbability: number | null;
+  scoreMode?: "actual" | "projection";
   teamRecord?: TeamRecord;
   opponentName?: string;
   roster: RosterPlayer[];

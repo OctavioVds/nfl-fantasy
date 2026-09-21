@@ -83,7 +83,7 @@ function CommandView({ snapshot }: { snapshot: SyncSnapshot }) {
   const recordUnit = record ? `${record.streak ?? "SIN RACHA"}${record.rank ? ` · #${record.rank}` : ""}` : "SIN DATOS";
   return <>
     <section className="score-strip">
-      <Metric label="Mi proyección" value={snapshot.projectedScore == null ? "—" : snapshot.projectedScore.toFixed(1)} unit="PTS" />
+      <Metric label={snapshot.scoreMode === "actual" ? "Mi marcador" : "Mi proyección"} value={snapshot.projectedScore == null ? "—" : snapshot.projectedScore.toFixed(1)} unit="PTS" />
       <Metric label={snapshot.opponentName ?? "Rival"} value={snapshot.opponentScore == null ? "—" : snapshot.opponentScore.toFixed(1)} unit="PTS" />
       <Metric label="Victoria" value={snapshot.winProbability == null ? "—" : `${snapshot.winProbability}%`} unit={snapshot.winProbability == null ? "SIN DATOS" : "SIMULACIÓN"} />
       <Metric label="Récord" value={recordValue} unit={recordUnit} />

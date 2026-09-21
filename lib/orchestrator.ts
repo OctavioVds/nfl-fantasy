@@ -28,7 +28,9 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     const stored = externalSyncSchema.safeParse(await getLatestExternalIngest());
     if (stored.success) league = stored.data;
   }
-  const period = league ? { season: league.league.season, week: league.league.week } : nflPeriod(started);
+  const calendarPeriod = nflPeriod(started);
+  const period = league ? { season: league.league.season, week: calendarPeriod.week } : calendarPeriod;
+  const useNextOpponent = Boolean(league?.nextOpponent && period.week >= league.nextOpponent.week);
   await captureServerEvent("sync_started", period);
 
   const firstWave = await Promise.all([
@@ -107,7 +109,8 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     const kickoff = p.kickoff ?? sports?.kickoff ?? game?.kickoff;
     return { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: p.slot, projection: agg?.median ?? p.projection, futureProjection: sports?.futureProjection ?? p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, floor: agg?.floor, ceiling: agg?.ceiling, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue, weather: game?.weather, locked: isPlayerLocked(kickoff), injury: p.injury ?? sports?.injury };
   });
-  const opponentRoster = enrichLeaguePlayers(league.opponent?.roster ?? []);
+  const activeOpponent = useNextOpponent ? league.nextOpponent : league.opponent;
+  const opponentRoster = enrichLeaguePlayers(activeOpponent?.roster ?? []);
   const tradePartners: TradePartner[] = (league.tradePartners ?? []).map((partner) => ({ ...partner, roster: enrichLeaguePlayers(partner.roster) }));
   const computedOpponentScore = opponentRoster.length ? optimizeLineup(opponentRoster).reduce((sum, p) => sum + (p.projection ?? 0), 0) : null;
 
@@ -126,8 +129,10 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
   const waiverActions = (secondWave.find((r) => r.name === "WaiverRecommendations")?.data ?? []) as ReturnType<typeof waiverRecommendations>;
   const rosterActions = (secondWave.find((r) => r.name === "RosterManagement")?.data ?? []) as ReturnType<typeof rosterManagementRecommendations>;
   const tradeActions = (secondWave.find((r) => r.name === "TradeFinder")?.data ?? []) as ReturnType<typeof tradeRecommendations>;
-  const projectedScore = optimizeLineup(roster).reduce((sum, p) => sum + (p.projection ?? 0), 0);
-  const opp = computedOpponentScore == null ? league.opponentProjection ?? null : Math.round(computedOpponentScore * 10) / 10;
+  const lineupProjection = optimizeLineup(roster).reduce((sum, p) => sum + (p.projection ?? 0), 0);
+  const showingActual = !useNextOpponent && league.currentScore != null;
+  const projectedScore = showingActual ? league.currentScore! : lineupProjection;
+  const opp = showingActual ? league.opponentProjection ?? null : computedOpponentScore == null ? league.opponentProjection ?? null : Math.round(computedOpponentScore * 10) / 10;
   // League rosters change far less often than scores/projections, which are refreshed
   // independently on every sync. Avoid disabling valid advice after only 30 minutes.
   const stale = isStale(league.sourceTimestamp, 24 * 60 * 60_000, started);
@@ -138,9 +143,10 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     freshness: stale ? "STALE" : failed.length ? "DEGRADED" : "FRESH",
     health: failed.length ? "DEGRADED" : "HEALTHY",
     projectedScore: Math.round(projectedScore * 10) / 10, opponentScore: opp,
-    winProbability: opp == null ? null : simulateWin(projectedScore, opp),
+    winProbability: opp == null ? null : showingActual && league.matchupComplete ? (projectedScore > opp ? 100 : projectedScore < opp ? 0 : 50) : simulateWin(projectedScore, opp),
+    scoreMode: showingActual ? "actual" : "projection",
     teamRecord: league.teamRecord,
-    opponentName: league.opponent?.name,
+    opponentName: activeOpponent?.name,
     roster,
     recommendations: [...lineupActions, ...waiverActions, ...tradeActions, ...rosterActions]
       .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99) || b.confidenceScore - a.confidenceScore)
