@@ -194,6 +194,8 @@ export function tradeRecommendations(roster: RosterPlayer[], partners: TradePart
     const theirStarters = new Set(optimizeLineup(partner.roster).map((p) => p.canonicalPlayerId));
     const targets = partner.roster.filter((p) => !p.locked && p.slot !== "IR" && !theirStarters.has(p.canonicalPlayerId) && ["RB", "WR", "TE"].includes(p.position));
     for (const give of offers) for (const receive of targets) {
+      if (receive.position === "TE" && (myPositionCounts.get("TE") ?? 0) >= 2) continue;
+      if (receive.position === "WR" && (myPositionCounts.get("WR") ?? 0) >= 5) continue;
       const partnerBestQb = Math.max(0, ...partner.roster.filter((p) => p.position === "QB" && p.slot !== "IR").map((p) => p.projection ?? 0));
       if (give.position === "QB" && (partnerBestQb >= (give.projection ?? 0) * 0.82 || partner.roster.filter((p) => p.position === "QB" && p.slot !== "IR").length > 1)) continue;
       if ((receive.opportunityScore ?? 50) > (give.opportunityScore ?? 50) + 18) continue;
