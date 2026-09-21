@@ -13,7 +13,7 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const starters = useMemo(() => optimizeLineup(snapshot.roster), [snapshot.roster]);
+  const starters = useMemo(() => snapshot.scoreMode === "actual" ? snapshot.roster.filter((p) => !["Bench", "IR"].includes(p.slot)) : optimizeLineup(snapshot.roster), [snapshot.roster, snapshot.scoreMode]);
   const starterIds = useMemo(() => new Set(starters.map((p) => p.canonicalPlayerId)), [starters]);
   const bench = useMemo(() => snapshot.roster.filter((p) => p.slot !== "IR" && !starterIds.has(p.canonicalPlayerId)).map((p) => ({ ...p, slot: "Bench" })), [snapshot.roster, starterIds]);
 
@@ -106,7 +106,7 @@ function CommandView({ snapshot }: { snapshot: SyncSnapshot }) {
 
 function LineupView({ starters, bench, historical }: { starters: SyncSnapshot["roster"]; bench: SyncSnapshot["roster"]; historical: boolean }) {
   return <section className="panel lineup-panel">
-    <div className="panel-head"><h2>Alineación óptima</h2><span>PROYECCIÓN PPR · AJUSTADA AUTOMÁTICAMENTE</span></div>
+    <div className="panel-head"><h2>Alineación {starters.some((p) => p.locked) ? "y puntos" : "óptima"}</h2><span>PPR · ESPN + MODELO</span></div>
     <div className="decision-note">Usa esta alineación en ESPN. Respeta jugadores bloqueados y elige la mayor proyección disponible para cada puesto.</div>
     <h3>Titulares recomendados</h3>
     <div className="player-list">{starters.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} />)}</div>

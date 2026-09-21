@@ -31,6 +31,7 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
   const calendarPeriod = nflPeriod(started);
   const period = league ? { season: league.league.season, week: calendarPeriod.week } : calendarPeriod;
   const useNextOpponent = Boolean(league?.nextOpponent && period.week >= league.nextOpponent.week);
+  const showingCurrentActual = Boolean(league && !useNextOpponent && league.currentScore != null);
   await captureServerEvent("sync_started", period);
 
   const firstWave = await Promise.all([
@@ -81,15 +82,20 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
   for (const p of roster) {
     const agg = projectionGroups.get(p.canonicalPlayerId);
     const sports = p.position === "DST" ? sportsDefenseByTeam.get(p.team.toUpperCase()) : sportsById.get(p.canonicalPlayerId);
-    if (agg) { p.projection = agg.median; p.floor = agg.floor; p.ceiling = agg.ceiling; }
-    if (sports?.futureProjection != null) p.futureProjection = sports.futureProjection;
+    if (showingCurrentActual) {
+      p.projection = league.roster.find((item) => canonicalPlayerId(item.name, item.team) === p.canonicalPlayerId)?.projection;
+      p.floor = undefined; p.ceiling = undefined;
+    } else {
+      if (agg) { p.projection = agg.median; p.floor = agg.floor; p.ceiling = agg.ceiling; }
+      if (sports?.futureProjection != null) p.futureProjection = sports.futureProjection;
+    }
   }
   const freeAgents: RosterPlayer[] = league.freeAgents.map((p) => {
     const id = canonicalPlayerId(p.name, p.team);
     const sports = p.position === "DST" ? sportsDefenseByTeam.get(p.team.toUpperCase()) : sportsById.get(id);
     const projections = [
       ...(p.projection != null ? [{ canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, source: league.source, points: p.projection, sourceTimestamp: league.sourceTimestamp }] : []),
-      ...(sports ? [{ canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, source: "sportsdataio", points: sports.points, sourceTimestamp: started.toISOString() }] : []),
+      ...(!showingCurrentActual && sports ? [{ canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, source: "sportsdataio", points: sports.points, sourceTimestamp: started.toISOString() }] : []),
     ];
     const agg = aggregateProjections(projections);
     const game = scheduleByTeam.get(p.team.toUpperCase());
@@ -130,7 +136,7 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
   const rosterActions = (secondWave.find((r) => r.name === "RosterManagement")?.data ?? []) as ReturnType<typeof rosterManagementRecommendations>;
   const tradeActions = (secondWave.find((r) => r.name === "TradeFinder")?.data ?? []) as ReturnType<typeof tradeRecommendations>;
   const lineupProjection = optimizeLineup(roster).reduce((sum, p) => sum + (p.projection ?? 0), 0);
-  const showingActual = !useNextOpponent && league.currentScore != null;
+  const showingActual = showingCurrentActual;
   const projectedScore = showingActual ? league.currentScore! : lineupProjection;
   const opp = showingActual ? league.opponentProjection ?? null : computedOpponentScore == null ? league.opponentProjection ?? null : Math.round(computedOpponentScore * 10) / 10;
   // League rosters change far less often than scores/projections, which are refreshed
