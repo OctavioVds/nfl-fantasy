@@ -22,6 +22,13 @@ type SportsDataRow = {
   InjuryStatus?: string;
 };
 
+type SportsDataDefenseRow = {
+  FantasyDefenseID?: number;
+  Team?: string;
+  FantasyPoints?: number;
+  DateTime?: string;
+};
+
 export async function fetchSportsDataIoProjections(season: number, week: number): Promise<SportsDataProjection[]> {
   const key = process.env.SPORTSDATAIO_API_KEY;
   if (!key) throw new Error("SPORTSDATAIO_API_KEY no configurada");
@@ -32,7 +39,7 @@ export async function fetchSportsDataIoProjections(season: number, week: number)
   }), 8_000));
   if (!response.ok) throw new Error(`SportsDataIO ${response.status}`);
   const rows = await response.json() as SportsDataRow[];
-  return rows.flatMap((row) => {
+  const players = rows.flatMap((row) => {
     const points = row.FantasyPointsPPR ?? row.FantasyPointsYahoo ?? row.FantasyPoints;
     if (!row.Name || !row.Team || !row.Position || points == null) return [];
     return [{
@@ -41,4 +48,23 @@ export async function fetchSportsDataIoProjections(season: number, week: number)
       injury: row.InjuryStatus || undefined,
     }];
   });
+  try {
+    const defenseUrl = `https://api.sportsdata.io/v3/nfl/projections/json/FantasyDefenseProjectionsByGame/${season}REG/${week}`;
+    const defenseResponse = await retry(() => withTimeout(fetch(defenseUrl, {
+      headers: { "Ocp-Apim-Subscription-Key": key, Accept: "application/json" },
+      cache: "no-store",
+    }), 8_000));
+    if (!defenseResponse.ok) return players;
+    const defenses = await defenseResponse.json() as SportsDataDefenseRow[];
+    return [...players, ...defenses.flatMap((row) => {
+      if (!row.Team || row.FantasyPoints == null) return [];
+      return [{
+        providerId: String(row.FantasyDefenseID ?? row.Team), name: `${row.Team} D/ST`, team: row.Team,
+        position: "DST", points: row.FantasyPoints,
+        kickoff: row.DateTime ? new Date(row.DateTime).toISOString() : undefined,
+      }];
+    })];
+  } catch {
+    return players;
+  }
 }

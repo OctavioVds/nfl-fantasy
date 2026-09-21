@@ -65,18 +65,19 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
   }); });
   const sportsData = (firstWave.find((r) => r.name === "SportsDataIO")?.data ?? []) as Awaited<ReturnType<typeof fetchSportsDataIoProjections>>;
   const sportsById = new Map(sportsData.map((p) => [canonicalPlayerId(p.name, p.team), p]));
+  const sportsDefenseByTeam = new Map(sportsData.filter((p) => p.position === "DST").map((p) => [p.team.toUpperCase(), p]));
   const projectionGroups = new Map<string, ReturnType<typeof aggregateProjections>>();
   for (const p of roster) {
     const projections = [];
     if (p.projection != null) projections.push({ canonicalPlayerId: p.canonicalPlayerId, name: p.name, team: p.team, position: p.position, source: league.source, points: p.projection, sourceTimestamp: league.sourceTimestamp });
-    const sports = sportsById.get(p.canonicalPlayerId);
+    const sports = p.position === "DST" ? sportsDefenseByTeam.get(p.team.toUpperCase()) : sportsById.get(p.canonicalPlayerId);
     if (sports) projections.push({ canonicalPlayerId: p.canonicalPlayerId, name: p.name, team: p.team, position: p.position, source: "sportsdataio", points: sports.points, sourceTimestamp: started.toISOString() });
     if (projections.length) projectionGroups.set(p.canonicalPlayerId, aggregateProjections(projections));
   }
   for (const p of roster) { const agg = projectionGroups.get(p.canonicalPlayerId); if (agg) { p.projection = agg.median; p.floor = agg.floor; p.ceiling = agg.ceiling; } }
   const freeAgents: RosterPlayer[] = league.freeAgents.map((p) => {
     const id = canonicalPlayerId(p.name, p.team);
-    const sports = sportsById.get(id);
+    const sports = p.position === "DST" ? sportsDefenseByTeam.get(p.team.toUpperCase()) : sportsById.get(id);
     const projections = [
       ...(p.projection != null ? [{ canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, source: league.source, points: p.projection, sourceTimestamp: league.sourceTimestamp }] : []),
       ...(sports ? [{ canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, source: "sportsdataio", points: sports.points, sourceTimestamp: started.toISOString() }] : []),
