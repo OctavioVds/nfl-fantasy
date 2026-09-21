@@ -162,10 +162,10 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
     if (selected.length === 3) break;
   }
   for (const row of ranked) {
-    if (selected.length === 3) break;
+    if (selected.length === 6) break;
     if (!selected.includes(row)) selected.push(row);
   }
-  return selected.map(({ candidate, drop, net, confidenceScore }) => ({
+  return selected.map(({ candidate, drop, net, confidenceScore }, index) => ({
       id: `add-${candidate.canonicalPlayerId}-drop-${drop.canonicalPlayerId}`,
       kind: "ADD" as const,
       headline: `ADD ${candidate.name} · DROP ${drop.name}`,
@@ -180,7 +180,7 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
         ...(candidate.opportunityScore != null ? [{ type: "INFERENCE" as const, text: `Opportunity score normalizado: ${candidate.opportunityScore}/100.` }] : []),
       ],
       actionable: true,
-      priority: 3,
+      priority: 3 + index / 100,
     }));
 }
 

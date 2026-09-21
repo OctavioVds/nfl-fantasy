@@ -39,6 +39,11 @@ describe("waiver decisions", () => {
     const moves = waiverRecommendations(roster, [p("TE Best", "TE", 15, "FA"), p("TE Second", "TE", 14, "FA"), p("WR Best", "WR", 10, "FA")]);
     expect(moves.slice(0, 2).map((move) => move.target)).toEqual(["TE Best", "WR Best"]);
   });
+  it("keeps fallback claims after the best option at each position", () => {
+    const roster = [p("TE Drop", "TE", 2), p("WR Drop", "WR", 2), p("RB Drop", "RB", 2)];
+    const moves = waiverRecommendations(roster, [p("WR One", "WR", 15, "FA"), p("WR Two", "WR", 14, "FA"), p("RB One", "RB", 13, "FA"), p("TE One", "TE", 12, "FA")]);
+    expect(moves.map((move) => move.target)).toEqual(["WR One", "RB One", "TE One", "WR Two"]);
+  });
 });
 
 describe("lineup legality", () => {
