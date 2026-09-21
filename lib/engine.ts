@@ -1,4 +1,4 @@
-import type { PlayerProjection, Recommendation, RosterPlayer } from "./types";
+import type { PlayerProjection, Recommendation, RosterPlayer, TradePartner } from "./types";
 
 export function pprPoints(input: {
   passYards?: number; passTd?: number; interceptions?: number;
@@ -126,7 +126,7 @@ export function rosterManagementRecommendations(players: RosterPlayer[]): Recomm
   return actions;
 }
 
-function playerValue(player: RosterPlayer, roster: RosterPlayer[]) {
+export function playerValue(player: RosterPlayer, roster: RosterPlayer[]) {
   const weekly = player.projection ?? 0;
   const future = player.futureProjection ?? weekly;
   const opportunity = (player.opportunityScore ?? 50) / 20;
@@ -162,7 +162,7 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
     if (selected.length === 3) break;
   }
   for (const row of ranked) {
-    if (selected.length === 6) break;
+    if (selected.length === 18) break;
     if (!selected.includes(row)) selected.push(row);
   }
   return selected.map(({ candidate, drop, net, confidenceScore }, index) => ({
@@ -181,6 +181,53 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
       ],
       actionable: true,
       priority: 3 + index / 100,
+    }));
+}
+
+export function tradeRecommendations(roster: RosterPlayer[], partners: TradePartner[]): Recommendation[] {
+  const myStarters = new Set(optimizeLineup(roster).map((p) => p.canonicalPlayerId));
+  const offers = roster.filter((p) => !p.locked && p.slot !== "IR" && !myStarters.has(p.canonicalPlayerId));
+  const myPositionCounts = new Map(["RB", "WR", "TE"].map((position) => [position, roster.filter((p) => p.position === position && p.slot !== "IR").length]));
+  const candidates: { give: RosterPlayer; receive: RosterPlayer; partner: TradePartner; fit: number; gap: number }[] = [];
+
+  for (const partner of partners) {
+    const targets = partner.roster.filter((p) => !p.locked && p.slot !== "IR" && ["RB", "WR", "TE"].includes(p.position));
+    for (const give of offers) for (const receive of targets) {
+      const giveValue = playerValue(give, roster);
+      const receiveValue = playerValue(receive, roster);
+      if (giveValue <= 0 || receiveValue < giveValue * 0.82 || receiveValue > giveValue * 1.35) continue;
+      const partnerAtGive = partner.roster.filter((p) => p.position === give.position && p.slot !== "IR").length;
+      const fit = (give.position === "QB" && partnerAtGive <= 1 ? 5 : Math.max(0, 4 - partnerAtGive)) + Math.max(0, 4 - (myPositionCounts.get(receive.position) ?? 4));
+      candidates.push({ give, receive, partner, fit, gap: receiveValue - giveValue });
+    }
+  }
+
+  const used = new Set<string>();
+  return candidates
+    .sort((a, b) => b.fit - a.fit || b.gap - a.gap)
+    .filter(({ give, receive, partner }) => {
+      const key = `${give.canonicalPlayerId}|${receive.canonicalPlayerId}|${partner.teamId}`;
+      if (used.has(key)) return false;
+      used.add(key); return true;
+    })
+    .slice(0, 10)
+    .map(({ give, receive, partner, gap }, index) => ({
+      id: `trade-${give.canonicalPlayerId}-for-${receive.canonicalPlayerId}-${partner.teamId}`,
+      kind: "TRADE" as const,
+      headline: `OFRECER ${give.name} a ${partner.name} por ${receive.name}`,
+      target: receive.name,
+      alternative: give.name,
+      partner: partner.name,
+      confidence: Math.abs(gap) <= 2 ? "MEDIUM" as const : "LOW" as const,
+      confidenceScore: Math.abs(gap) <= 2 ? 7 : 5,
+      risk: "Es una propuesta de valor estimado; el rival puede rechazarla o pedir un paquete distinto.",
+      why: [
+        { type: "FACT" as const, text: `${receive.name} figura actualmente en el roster de ${partner.name}.` },
+        { type: "MODEL" as const, text: `Valores proyectados comparables; diferencia estimada para tu roster: ${gap >= 0 ? "+" : ""}${round(gap)}.` },
+        { type: "INFERENCE" as const, text: `La operación convierte profundidad de banca en ayuda de ${receive.position}.` },
+      ],
+      actionable: true,
+      priority: 4.2 + index / 100,
     }));
 }
 

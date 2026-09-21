@@ -35,7 +35,7 @@ h1 span { color: var(--amber); }
 .warning, .error { margin: 14px 0; border: 1px solid #7d5a21; border-left: 4px solid var(--amber); background: #2a2112; border-radius: 3px; padding: 12px 14px; font-size: .9rem; line-height: 1.5; }
 .warning strong { color: var(--amber); margin-right: 10px; text-transform: uppercase; font-family: var(--font-display); }
 .error { border-color: #77392f; border-left-color: var(--red); background: #281613; }
-.score-strip { display: grid; grid-template-columns: repeat(4, 1fr); margin: 18px 0; border: 1px solid var(--line); background: var(--panel); }
+.score-strip { display: grid; grid-template-columns: repeat(5, 1fr); margin: 18px 0; border: 1px solid var(--line); background: var(--panel); }
 .metric { padding: 17px 18px; border-right: 1px solid var(--line); display: grid; gap: 2px; min-height: 112px; }
 .metric:last-child { border-right: 0; }
 .metric > span { color: var(--muted); font: 500 .74rem var(--font-mono); text-transform: uppercase; }
@@ -88,14 +88,17 @@ h1 span { color: var(--amber); }
 .source-list > div { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: .8rem; }
 .source-list span { color: var(--muted); }
 .empty { color: var(--muted); padding: 20px 2px; font-size: .88rem; }
+.more-button { width: 100%; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 3px; color: var(--amber); background: var(--panel-2); cursor: pointer; font: 600 .72rem var(--font-mono); text-transform: uppercase; letter-spacing: .04em; }
+.more-button:hover { border-color: var(--amber); }
 footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; border-top: 1px solid var(--line); padding-top: 16px; margin-top: 28px; color: var(--muted); font: 400 .7rem var(--font-mono); }
 @media (max-width: 780px) {
   .app-shell { width: min(100% - 20px, 1220px); padding-top: 16px; }
   .topbar { align-items: flex-start; }
   .health { display: none; }
   .score-strip { grid-template-columns: repeat(2, 1fr); }
-  .metric:nth-child(2) { border-right: 0; }
-  .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+  .metric { border-bottom: 1px solid var(--line); }
+  .metric:nth-child(2n) { border-right: 0; }
+  .metric:last-child { border-bottom: 0; }
   .dashboard-grid { grid-template-columns: 1fr; }
   .agent-grid, .action-groups { grid-template-columns: 1fr; }
 }

@@ -77,18 +77,22 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
 function CommandView({ snapshot }: { snapshot: SyncSnapshot }) {
   const bestWaiver = snapshot.recommendations.find((item) => item.kind === "ADD");
   const urgent = snapshot.recommendations.filter((item) => ["START", "WATCH"].includes(item.kind));
-  const topActions = [...urgent, ...snapshot.recommendations.filter((item) => !urgent.includes(item))].slice(0, 3);
+  const topActions = [...urgent, ...snapshot.recommendations.filter((item) => !urgent.includes(item))];
+  const record = snapshot.teamRecord;
+  const recordValue = record ? `${record.wins}-${record.losses}${record.ties ? `-${record.ties}` : ""}` : "—";
+  const recordUnit = record ? `${record.streak ?? "SIN RACHA"}${record.rank ? ` · #${record.rank}` : ""}` : "SIN DATOS";
   return <>
     <section className="score-strip">
       <Metric label="Mi proyección" value={snapshot.projectedScore == null ? "—" : snapshot.projectedScore.toFixed(1)} unit="PTS" />
-      <Metric label="Rival" value={snapshot.opponentScore == null ? "—" : snapshot.opponentScore.toFixed(1)} unit="PTS" />
+      <Metric label={snapshot.opponentName ?? "Rival"} value={snapshot.opponentScore == null ? "—" : snapshot.opponentScore.toFixed(1)} unit="PTS" />
       <Metric label="Victoria" value={snapshot.winProbability == null ? "—" : `${snapshot.winProbability}%`} unit={snapshot.winProbability == null ? "SIN DATOS" : "SIMULACIÓN"} />
+      <Metric label="Récord" value={recordValue} unit={recordUnit} />
       <Metric label="Actualidad" value={snapshot.freshness} unit={snapshot.sources.length ? `${snapshot.sources.length} FUENTE(S)` : "SIN FUENTE VIVA"} compact />
     </section>
     <div className="dashboard-grid">
       <section className="panel actions-panel">
-        <div className="panel-head"><h2>Top acciones</h2><span>{snapshot.freshness === "STALE" ? "HISTÓRICAS · NO ACCIONABLES" : "MÁXIMO 3"}</span></div>
-        {topActions.length ? topActions.map((action, index) => <ActionCard key={action.id} action={action} index={index} />) : <Empty message="No hay acciones validadas con los datos actuales." />}
+        <div className="panel-head"><h2>Mejores acciones</h2><span>{snapshot.freshness === "STALE" ? "HISTÓRICAS · NO ACCIONABLES" : "ORDENADAS POR PRIORIDAD"}</span></div>
+        {topActions.length ? <ExpandableActions items={topActions} initialCount={3} /> : <Empty message="No hay acciones validadas con los datos actuales." />}
       </section>
       <section className="panel intel-panel">
         <div className="panel-head"><h2>Estado de decisión</h2><span>{snapshot.health}</span></div>
@@ -115,14 +119,15 @@ function ActionsView({ snapshot }: { snapshot: SyncSnapshot }) {
   const groups = [
     { title: "Cambios de alineación", kinds: ["START", "SIT"] },
     { title: "Waivers en orden", kinds: ["ADD", "DROP", "STREAM"] },
-    { title: "Manejo del roster", kinds: ["TRADE", "HOLD", "WATCH"] },
+    { title: "Trades recomendados", kinds: ["TRADE"] },
+    { title: "Manejo del roster", kinds: ["HOLD", "WATCH"] },
   ];
   return <section className="panel">
     <div className="panel-head"><h2>Action Center</h2><span>{snapshot.freshness === "STALE" ? "HISTÓRICO · NO ACCIONABLE" : "PLAN VALIDADO"}</span></div>
     <div className="decision-note">Ejecuta en este orden. Las reclamaciones alternativas con el mismo jugador a cortar deben colocarse debajo de la prioridad principal en ESPN.</div>
     <div className="action-groups">{groups.map((group) => {
       const items = snapshot.recommendations.filter((r) => group.kinds.includes(r.kind));
-      return <div className="action-group" key={group.title}><h3>{group.title}</h3>{items.length ? items.map((a, i) => <ActionCard key={a.id} action={a} index={i} />) : <p>La plantilla actual no requiere una acción en esta categoría.</p>}</div>;
+      return <div className="action-group" key={group.title}><h3>{group.title}</h3>{items.length ? <ExpandableActions items={items} initialCount={3} /> : <p>La plantilla actual no requiere una acción en esta categoría.</p>}</div>;
     })}</div>
   </section>;
 }
@@ -150,6 +155,17 @@ function ActionCard({ action, index }: { action: SyncSnapshot["recommendations"]
   return <article className={`action-card ${!action.actionable ? "disabled" : ""}`}>
     <div className="action-index">0{index + 1}</div><div className="action-copy"><span>{action.actionable ? action.kind : `${action.kind} · NO ACCIONABLE`}</span><h3>{action.headline}</h3><div className="evidence">{action.why.map((reason, i) => <p key={i}><b>{reason.type}</b> {reason.text}</p>)}</div><small>Riesgo: {action.risk}</small></div><div className="confidence"><strong>{action.confidenceScore}/10</strong><span>{action.confidence}</span></div>
   </article>;
+}
+
+function ExpandableActions({ items, initialCount }: { items: SyncSnapshot["recommendations"]; initialCount: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? items : items.slice(0, initialCount);
+  return <>
+    {visible.map((action, index) => <ActionCard key={action.id} action={action} index={index} />)}
+    {items.length > initialCount && <button className="more-button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
+      {expanded ? "Ver menos" : `Ver más opciones (${items.length - initialCount})`}
+    </button>}
+  </>;
 }
 
 function Empty({ message }: { message: string }) { return <div className="empty">{message}</div>; }

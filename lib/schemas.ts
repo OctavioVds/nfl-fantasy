@@ -22,6 +22,26 @@ export const externalSyncSchema = z.object({
     scoring: z.record(z.string(), z.number()).default({ reception: 1 }),
   }),
   roster: z.array(externalPlayerSchema).min(1),
+  teamRecord: z.object({
+    wins: z.number().int().nonnegative(),
+    losses: z.number().int().nonnegative(),
+    ties: z.number().int().nonnegative().default(0),
+    rank: z.number().int().positive().optional(),
+    streak: z.string().max(12).optional(),
+    pointsFor: z.number().finite().nonnegative().optional(),
+    pointsAgainst: z.number().finite().nonnegative().optional(),
+  }).optional(),
+  opponent: z.object({
+    teamId: z.string().min(1),
+    name: z.string().min(1),
+    record: z.object({
+      wins: z.number().int().nonnegative(), losses: z.number().int().nonnegative(), ties: z.number().int().nonnegative().default(0),
+    }).optional(),
+    roster: z.array(externalPlayerSchema).default([]),
+  }).optional(),
+  tradePartners: z.array(z.object({
+    teamId: z.string().min(1), name: z.string().min(1), roster: z.array(externalPlayerSchema),
+  })).optional(),
   opponentProjection: z.number().finite().nonnegative().optional(),
   freeAgents: z.array(externalPlayerSchema).default([]),
   source: z.enum(["flaim", "espn", "manual", "chatgpt"]),

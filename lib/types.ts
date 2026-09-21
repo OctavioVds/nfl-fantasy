@@ -57,6 +57,23 @@ export interface Recommendation {
   why: { type: "FACT" | "INFERENCE" | "MODEL"; text: string }[];
   actionable: boolean;
   priority?: number;
+  partner?: string;
+}
+
+export interface TeamRecord {
+  wins: number;
+  losses: number;
+  ties: number;
+  rank?: number;
+  streak?: string;
+  pointsFor?: number;
+  pointsAgainst?: number;
+}
+
+export interface TradePartner {
+  teamId: string;
+  name: string;
+  roster: RosterPlayer[];
 }
 
 export interface AgentRun {
@@ -79,6 +96,8 @@ export interface SyncSnapshot {
   projectedScore: number | null;
   opponentScore: number | null;
   winProbability: number | null;
+  teamRecord?: TeamRecord;
+  opponentName?: string;
   roster: RosterPlayer[];
   recommendations: Recommendation[];
   agents: AgentRun[];

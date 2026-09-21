@@ -8,6 +8,7 @@ export interface SportsDataProjection {
   points: number;
   kickoff?: string;
   injury?: string;
+  futureProjection?: number;
 }
 
 type SportsDataRow = {
@@ -39,6 +40,18 @@ export async function fetchSportsDataIoProjections(season: number, week: number)
   }), 8_000));
   if (!response.ok) throw new Error(`SportsDataIO ${response.status}`);
   const rows = await response.json() as SportsDataRow[];
+  let seasonByPlayer = new Map<string, number>();
+  try {
+    const seasonUrl = `https://api.sportsdata.io/v3/nfl/projections/json/PlayerSeasonProjectionStats/${season}`;
+    const seasonResponse = await retry(() => withTimeout(fetch(seasonUrl, { headers: { "Ocp-Apim-Subscription-Key": key, Accept: "application/json" }, cache: "no-store" }), 8_000));
+    if (seasonResponse.ok) {
+      const seasonRows = await seasonResponse.json() as SportsDataRow[];
+      seasonByPlayer = new Map(seasonRows.flatMap((row) => {
+        const total = row.FantasyPointsPPR ?? row.FantasyPointsYahoo ?? row.FantasyPoints;
+        return row.Name && row.Team && total != null ? [[`${row.Name.toLowerCase()}|${row.Team.toUpperCase()}`, total / 17] as const] : [];
+      }));
+    }
+  } catch { /* weekly projections remain usable */ }
   const players = rows.flatMap((row) => {
     const points = row.FantasyPointsPPR ?? row.FantasyPointsYahoo ?? row.FantasyPoints;
     if (!row.Name || !row.Team || !row.Position || points == null) return [];
@@ -46,6 +59,7 @@ export async function fetchSportsDataIoProjections(season: number, week: number)
       providerId: String(row.PlayerID ?? row.Name), name: row.Name, team: row.Team,
       position: row.Position, points, kickoff: row.GameDate ? new Date(row.GameDate).toISOString() : undefined,
       injury: row.InjuryStatus || undefined,
+      futureProjection: seasonByPlayer.get(`${row.Name.toLowerCase()}|${row.Team.toUpperCase()}`),
     }];
   });
   try {
