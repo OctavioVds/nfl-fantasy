@@ -8,3 +8,5 @@ work/npm-cache
 *.tsbuildinfo
 *.log
 .DS_Store
+
+.vercel
