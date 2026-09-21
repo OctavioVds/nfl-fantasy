@@ -128,7 +128,9 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
   const tradeActions = (secondWave.find((r) => r.name === "TradeFinder")?.data ?? []) as ReturnType<typeof tradeRecommendations>;
   const projectedScore = optimizeLineup(roster).reduce((sum, p) => sum + (p.projection ?? 0), 0);
   const opp = computedOpponentScore == null ? league.opponentProjection ?? null : Math.round(computedOpponentScore * 10) / 10;
-  const stale = isStale(league.sourceTimestamp, 30 * 60_000, started);
+  // League rosters change far less often than scores/projections, which are refreshed
+  // independently on every sync. Avoid disabling valid advice after only 30 minutes.
+  const stale = isStale(league.sourceTimestamp, 24 * 60 * 60_000, started);
   const failed = [...firstWave, ...secondWave].filter((r) => r.run.status === "failed");
   const snapshot: SyncSnapshot = {
     id: randomUUID(), season: period.season, week: period.week, leagueName: league.league.name,
@@ -145,7 +147,7 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
       .map((r) => ({ ...r, actionable: !stale })),
     agents: [...firstWave, ...secondWave].map((r) => r.run),
     sources: [{ name: league.source, sourceTimestamp: league.sourceTimestamp, fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" }, ...(scheduleEvents.length ? [{ name: "ESPN NFL Scoreboard", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...(sportsData.length ? [{ name: "SportsDataIO", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...((firstWave.find((r) => r.name === "StatsHawk")?.data) ? [{ name: "StatsHawk NFL", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : [])],
-    warnings: [...(stale ? ["STALE DATA WARNING: la fuente de liga supera 30 minutos."] : []), ...(failed.length ? [`DEGRADED DATA: ${failed.map((r) => r.name).join(", ")}.`] : [])],
+    warnings: [...(stale ? ["STALE DATA WARNING: la plantilla de liga supera 24 horas; vuelve a importar ESPN/Flaim."] : []), ...(failed.length ? [`DEGRADED DATA: ${failed.map((r) => r.name).join(", ")}.`] : [])],
   };
   await saveSnapshot(snapshot);
   await captureServerEvent("sync_completed", { ...period, degraded: failed.length > 0, latency_ms: Date.now() - started.getTime() });
