@@ -78,6 +78,7 @@ h1 span { color: var(--amber); }
 .action-group { border: 1px solid var(--line); padding: 12px; min-height: 100px; }
 .action-group h3 { margin: 0 0 8px; font: 700 .78rem var(--font-mono); color: var(--amber); }
 .action-group > p { color: var(--muted); font-size: .8rem; }
+.decision-note { margin: 14px 0 4px; padding: 11px 13px; border-left: 3px solid var(--blue); background: rgba(75, 141, 181, .08); color: #c6d2cc; font-size: .8rem; line-height: 1.5; }
 .agent-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
 .agent { border: 1px solid var(--line); background: var(--panel-2); padding: 12px; min-height: 78px; }
 .agent > div { display: flex; align-items: center; gap: 7px; font-size: .8rem; }

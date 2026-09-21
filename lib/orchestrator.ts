@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { captureServerEvent } from "./analytics";
 import { getLatestExternalIngest, saveExternalIngest, saveSnapshot } from "./db";
-import { aggregateProjections, canonicalPlayerId, simulateWin, topLineupRecommendations, waiverRecommendations } from "./engine";
+import { aggregateProjections, canonicalPlayerId, optimizeLineup, rosterManagementRecommendations, simulateWin, topLineupRecommendations, waiverRecommendations } from "./engine";
 import { fallbackSnapshot } from "./fallback-data";
 import { fetchEspnScoreboard, mapEspnTeamContexts } from "./providers/espn";
 import { fetchSleeperTrending } from "./providers/sleeper";
@@ -96,10 +96,12 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     runAgent("RestOfSeason", async () => []),
     runAgent("DefenseStreaming", async () => []),
     runAgent("KickerStreaming", async () => []),
+    runAgent("RosterManagement", async () => rosterManagementRecommendations(roster)),
   ]);
   const lineupActions = (secondWave.find((r) => r.name === "LineupOptimization")?.data ?? []) as ReturnType<typeof topLineupRecommendations>;
   const waiverActions = (secondWave.find((r) => r.name === "WaiverRecommendations")?.data ?? []) as ReturnType<typeof waiverRecommendations>;
-  const projectedScore = roster.filter((p) => !["Bench", "IR"].includes(p.slot)).reduce((sum, p) => sum + (p.projection ?? 0), 0);
+  const rosterActions = (secondWave.find((r) => r.name === "RosterManagement")?.data ?? []) as ReturnType<typeof rosterManagementRecommendations>;
+  const projectedScore = optimizeLineup(roster).reduce((sum, p) => sum + (p.projection ?? 0), 0);
   const opp = league.opponentProjection ?? null;
   const stale = isStale(league.sourceTimestamp, 30 * 60_000, started);
   const failed = [...firstWave, ...secondWave].filter((r) => r.run.status === "failed");
@@ -110,7 +112,11 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     health: failed.length ? "DEGRADED" : "HEALTHY",
     projectedScore: Math.round(projectedScore * 10) / 10, opponentScore: opp,
     winProbability: opp == null ? null : simulateWin(projectedScore, opp),
-    roster, recommendations: [...waiverActions, ...lineupActions].slice(0, 3).map((r) => ({ ...r, actionable: !stale })), agents: [...firstWave, ...secondWave].map((r) => r.run),
+    roster,
+    recommendations: [...lineupActions, ...waiverActions, ...rosterActions]
+      .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99) || b.confidenceScore - a.confidenceScore)
+      .map((r) => ({ ...r, actionable: !stale })),
+    agents: [...firstWave, ...secondWave].map((r) => r.run),
     sources: [{ name: league.source, sourceTimestamp: league.sourceTimestamp, fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" }, ...(scheduleEvents.length ? [{ name: "ESPN NFL Scoreboard", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...(sportsData.length ? [{ name: "sportsdataio", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : [])],
     warnings: [...(stale ? ["STALE DATA WARNING: la fuente de liga supera 30 minutos."] : []), ...(failed.length ? [`DEGRADED DATA: ${failed.map((r) => r.name).join(", ")}.`] : [])],
   };

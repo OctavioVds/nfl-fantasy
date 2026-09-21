@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { SyncSnapshot } from "@/lib/types";
+import { optimizeLineup } from "@/lib/engine";
 import { formatMonterrey } from "@/lib/time";
 
 type View = "command" | "lineup" | "actions" | "system";
@@ -12,8 +13,9 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const starters = useMemo(() => snapshot.roster.filter((p) => !["Bench", "IR"].includes(p.slot)), [snapshot.roster]);
-  const bench = useMemo(() => snapshot.roster.filter((p) => p.slot === "Bench"), [snapshot.roster]);
+  const starters = useMemo(() => optimizeLineup(snapshot.roster), [snapshot.roster]);
+  const starterIds = useMemo(() => new Set(starters.map((p) => p.canonicalPlayerId)), [starters]);
+  const bench = useMemo(() => snapshot.roster.filter((p) => p.slot !== "IR" && !starterIds.has(p.canonicalPlayerId)).map((p) => ({ ...p, slot: "Bench" })), [snapshot.roster, starterIds]);
 
   async function sync() {
     setSyncing(true); setError(null);
@@ -74,6 +76,8 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
 
 function CommandView({ snapshot }: { snapshot: SyncSnapshot }) {
   const bestWaiver = snapshot.recommendations.find((item) => item.kind === "ADD");
+  const urgent = snapshot.recommendations.filter((item) => ["START", "WATCH"].includes(item.kind));
+  const topActions = [...urgent, ...snapshot.recommendations.filter((item) => !urgent.includes(item))].slice(0, 3);
   return <>
     <section className="score-strip">
       <Metric label="Mi proyección" value={snapshot.projectedScore == null ? "—" : snapshot.projectedScore.toFixed(1)} unit="PTS" />
@@ -84,7 +88,7 @@ function CommandView({ snapshot }: { snapshot: SyncSnapshot }) {
     <div className="dashboard-grid">
       <section className="panel actions-panel">
         <div className="panel-head"><h2>Top acciones</h2><span>{snapshot.freshness === "STALE" ? "HISTÓRICAS · NO ACCIONABLES" : "MÁXIMO 3"}</span></div>
-        {snapshot.recommendations.length ? snapshot.recommendations.slice(0, 3).map((action, index) => <ActionCard key={action.id} action={action} index={index} />) : <Empty message="No hay acciones validadas con los datos actuales." />}
+        {topActions.length ? topActions.map((action, index) => <ActionCard key={action.id} action={action} index={index} />) : <Empty message="No hay acciones validadas con los datos actuales." />}
       </section>
       <section className="panel intel-panel">
         <div className="panel-head"><h2>Estado de decisión</h2><span>{snapshot.health}</span></div>
@@ -98,8 +102,9 @@ function CommandView({ snapshot }: { snapshot: SyncSnapshot }) {
 
 function LineupView({ starters, bench, historical }: { starters: SyncSnapshot["roster"]; bench: SyncSnapshot["roster"]; historical: boolean }) {
   return <section className="panel lineup-panel">
-    <div className="panel-head"><h2>Alineación</h2><span>PROYECCIÓN PPR</span></div>
-    <h3>Titulares</h3>
+    <div className="panel-head"><h2>Alineación óptima</h2><span>PROYECCIÓN PPR · AJUSTADA AUTOMÁTICAMENTE</span></div>
+    <div className="decision-note">Usa esta alineación en ESPN. Respeta jugadores bloqueados y elige la mayor proyección disponible para cada puesto.</div>
+    <h3>Titulares recomendados</h3>
     <div className="player-list">{starters.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} />)}</div>
     <h3>Banca</h3>
     <div className="player-list">{bench.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} />)}</div>
@@ -107,12 +112,17 @@ function LineupView({ starters, bench, historical }: { starters: SyncSnapshot["r
 }
 
 function ActionsView({ snapshot }: { snapshot: SyncSnapshot }) {
-  const kinds = ["START", "SIT", "ADD", "DROP", "HOLD", "TRADE", "WATCH", "STREAM"];
+  const groups = [
+    { title: "Cambios de alineación", kinds: ["START", "SIT"] },
+    { title: "Waivers en orden", kinds: ["ADD", "DROP", "STREAM"] },
+    { title: "Manejo del roster", kinds: ["TRADE", "HOLD", "WATCH"] },
+  ];
   return <section className="panel">
-    <div className="panel-head"><h2>Action Center</h2><span>{snapshot.freshness === "STALE" ? "HISTÓRICO · NO ACCIONABLE" : "VALIDADO"}</span></div>
-    <div className="action-groups">{kinds.map((kind) => {
-      const items = snapshot.recommendations.filter((r) => r.kind === kind);
-      return <div className="action-group" key={kind}><h3>{kind}</h3>{items.length ? items.map((a, i) => <ActionCard key={a.id} action={a} index={i} />) : <p>Sin acción validada.</p>}</div>;
+    <div className="panel-head"><h2>Action Center</h2><span>{snapshot.freshness === "STALE" ? "HISTÓRICO · NO ACCIONABLE" : "PLAN VALIDADO"}</span></div>
+    <div className="decision-note">Ejecuta en este orden. Las reclamaciones alternativas con el mismo jugador a cortar deben colocarse debajo de la prioridad principal en ESPN.</div>
+    <div className="action-groups">{groups.map((group) => {
+      const items = snapshot.recommendations.filter((r) => group.kinds.includes(r.kind));
+      return <div className="action-group" key={group.title}><h3>{group.title}</h3>{items.length ? items.map((a, i) => <ActionCard key={a.id} action={a} index={i} />) : <p>La plantilla actual no requiere una acción en esta categoría.</p>}</div>;
     })}</div>
   </section>;
 }

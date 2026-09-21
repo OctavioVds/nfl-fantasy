@@ -25,14 +25,29 @@ export function aggregateProjections(projections: PlayerProjection[]) {
 }
 
 export function optimizeLineup(players: RosterPlayer[]) {
-  const unlocked = players.filter((p) => !p.locked);
-  const sort = (pos: string) => unlocked.filter((p) => p.position === pos).sort((a, b) => (b.projection ?? -1) - (a.projection ?? -1));
+  const slots = ["QB", "RB", "RB", "WR", "WR", "TE", "RB/WR", "DST", "K"];
   const used = new Set<string>();
-  const take = (list: RosterPlayer[], count: number) => list.filter((p) => !used.has(p.canonicalPlayerId)).slice(0, count).map((p) => (used.add(p.canonicalPlayerId), p));
-  const starters = [...take(sort("QB"), 1), ...take(sort("RB"), 2), ...take(sort("WR"), 2), ...take(sort("TE"), 1)];
-  const flex = take(unlocked.filter((p) => ["RB", "WR"].includes(p.position)).sort((a, b) => (b.projection ?? -1) - (a.projection ?? -1)), 1);
-  const fixed = players.filter((p) => p.locked && !["Bench", "IR"].includes(p.slot));
-  return [...fixed, ...starters, ...flex, ...take(sort("DST"), 1), ...take(sort("K"), 1)];
+  const result: RosterPlayer[] = [];
+  const eligible = (player: RosterPlayer, slot: string) => player.position === slot || (slot === "RB/WR" && ["RB", "WR"].includes(player.position));
+
+  for (const slot of slots) {
+    const locked = players.find((p) => p.locked && p.slot === slot && !used.has(p.canonicalPlayerId));
+    if (!locked) continue;
+    used.add(locked.canonicalPlayerId);
+    result.push({ ...locked, slot });
+  }
+  for (const slot of slots) {
+    const occupied = result.filter((p) => p.slot === slot).length;
+    const needed = slots.filter((candidate) => candidate === slot).length;
+    if (occupied >= needed) continue;
+    const candidate = players
+      .filter((p) => !p.locked && p.slot !== "IR" && !used.has(p.canonicalPlayerId) && eligible(p, slot))
+      .sort((a, b) => (b.projection ?? -1) - (a.projection ?? -1))[0];
+    if (!candidate) continue;
+    used.add(candidate.canonicalPlayerId);
+    result.push({ ...candidate, slot });
+  }
+  return result;
 }
 
 export function simulateWin(myMedian: number, oppMedian: number, iterations = 5000, seed = 42) {
@@ -65,9 +80,50 @@ export function topLineupRecommendations(players: RosterPlayer[]): Recommendatio
       risk: "Las proyecciones son estimaciones; noticias tardías pueden cambiar el papel.",
       why: [{ type: "MODEL", text: `Ventaja mediana estimada: +${delta} puntos PPR.` }],
       actionable: true,
+      priority: 1,
     });
   }
   return moves.slice(0, 3);
+}
+
+export function rosterManagementRecommendations(players: RosterPlayer[]): Recommendation[] {
+  const actions: Recommendation[] = [];
+  const quarterbacks = players
+    .filter((p) => p.position === "QB" && p.slot !== "IR" && !p.locked)
+    .sort((a, b) => (b.projection ?? 0) - (a.projection ?? 0));
+  if (quarterbacks.length > 1) {
+    const backup = quarterbacks[quarterbacks.length - 1];
+    actions.push({
+      id: `trade-${backup.canonicalPlayerId}`,
+      kind: "TRADE",
+      headline: `BUSCAR TRADE por ${backup.name} antes de cortarlo`,
+      target: backup.name,
+      confidence: "HIGH",
+      confidenceScore: 8,
+      risk: "El retorno depende de la necesidad de QB de los rivales; conserva al jugador si no recibes valor útil.",
+      why: [
+        { type: "FACT", text: "La liga utiliza un solo QB titular." },
+        { type: "INFERENCE", text: "Un segundo QB con valor de mercado aporta menos a tu alineación semanal que profundidad en RB o WR." },
+      ],
+      actionable: true,
+      priority: 4,
+    });
+  }
+  for (const player of players.filter((p) => p.injury && /^(Q|QUESTIONABLE|D|DOUBTFUL|O|OUT)$/i.test(p.injury))) {
+    actions.push({
+      id: `watch-${player.canonicalPlayerId}`,
+      kind: "WATCH",
+      headline: `VIGILAR estado de ${player.name} antes del kickoff`,
+      target: player.name,
+      confidence: "HIGH",
+      confidenceScore: 9,
+      risk: "La designación oficial puede cambiar durante la semana.",
+      why: [{ type: "FACT", text: `${player.name} figura con designación ${player.injury}.` }],
+      actionable: true,
+      priority: 2,
+    });
+  }
+  return actions;
 }
 
 function playerValue(player: RosterPlayer, roster: RosterPlayer[]) {
@@ -124,6 +180,7 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
         ...(candidate.opportunityScore != null ? [{ type: "INFERENCE" as const, text: `Opportunity score normalizado: ${candidate.opportunityScore}/100.` }] : []),
       ],
       actionable: true,
+      priority: 3,
     }));
 }
 

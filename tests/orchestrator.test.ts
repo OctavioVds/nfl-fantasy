@@ -29,4 +29,24 @@ describe("sync orchestration", () => {
     expect(result.leagueName).toBe("Saved League");
     expect(result.roster[0]?.name).toBe("Saved Player");
   });
+  it("keeps waiver and roster-management actions instead of truncating the action center", async () => {
+    const now = new Date().toISOString();
+    const result = await synchronize({
+      league: { name: "League", season: 2026, week: 3, scoring: { reception: 1 } },
+      roster: [
+        { providerId: "q1", name: "QB1", team: "KC", position: "QB", slot: "QB", projection: 22 },
+        { providerId: "q2", name: "QB2", team: "SF", position: "QB", slot: "Bench", projection: 20 },
+        { providerId: "w1", name: "Drop WR", team: "TEN", position: "WR", slot: "Bench", projection: 2 },
+        { providerId: "r1", name: "Drop RB", team: "CAR", position: "RB", slot: "Bench", projection: 2 },
+        { providerId: "t1", name: "Drop TE", team: "LV", position: "TE", slot: "Bench", projection: 2 },
+      ],
+      freeAgents: [
+        { providerId: "w2", name: "Add WR", team: "CLE", position: "WR", slot: "FA", projection: 14 },
+        { providerId: "r2", name: "Add RB", team: "HOU", position: "RB", slot: "FA", projection: 14 },
+        { providerId: "t2", name: "Add TE", team: "NO", position: "TE", slot: "FA", projection: 14 },
+      ], source: "manual", sourceTimestamp: now,
+    });
+    expect(result.recommendations.filter((item) => item.kind === "ADD")).toHaveLength(3);
+    expect(result.recommendations.some((item) => item.kind === "TRADE")).toBe(true);
+  });
 });

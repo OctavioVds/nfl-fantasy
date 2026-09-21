@@ -56,6 +56,7 @@ export interface Recommendation {
   risk: string;
   why: { type: "FACT" | "INFERENCE" | "MODEL"; text: string }[];
   actionable: boolean;
+  priority?: number;
 }
 
 export interface AgentRun {

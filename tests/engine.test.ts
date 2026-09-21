@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateProjections, canonicalPlayerId, optimizeLineup, pprPoints, simulateWin, waiverRecommendations } from "@/lib/engine";
+import { aggregateProjections, canonicalPlayerId, optimizeLineup, pprPoints, rosterManagementRecommendations, simulateWin, waiverRecommendations } from "@/lib/engine";
 import { isPlayerLocked, isStale, nflPeriod } from "@/lib/time";
 import type { PlayerProjection, RosterPlayer } from "@/lib/types";
 import { mapEspnTeamContexts } from "@/lib/providers/espn";
@@ -52,6 +52,15 @@ describe("lineup legality", () => {
   it("does not displace locked starters", () => {
     const locked = { ...p("locked", "WR", 1, "WR"), locked: true };
     expect(optimizeLineup([locked, p("better", "WR", 20), p("w2", "WR", 19), p("q", "QB", 1), p("r1", "RB", 1), p("r2", "RB", 1), p("t", "TE", 1), p("d", "DST", 1), p("k", "K", 1)]).some((x) => x.name === "locked")).toBe(true);
+  });
+  it("returns the recommended slot instead of the player's old bench slot", () => {
+    const result = optimizeLineup([p("q", "QB", 20), p("r1", "RB", 18), p("r2", "RB", 17), p("r3", "RB", 16), p("w1", "WR", 15), p("w2", "WR", 14), p("t", "TE", 10), p("d", "DST", 8), p("k", "K", 7)]);
+    expect(result.find((x) => x.name === "q")?.slot).toBe("QB");
+    expect(result.find((x) => x.name === "r3")?.slot).toBe("RB/WR");
+  });
+  it("flags a valuable second quarterback for trade before a cut", () => {
+    const actions = rosterManagementRecommendations([p("QB1", "QB", 22, "QB"), p("QB2", "QB", 20)]);
+    expect(actions[0]).toMatchObject({ kind: "TRADE", target: "QB2", confidence: "HIGH" });
   });
 });
 
