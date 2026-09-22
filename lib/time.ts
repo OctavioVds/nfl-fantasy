@@ -1,9 +1,10 @@
-const SEASON_STARTS: Record<number, string> = { 2026: "2026-09-10T00:00:00-04:00" };
+// Fantasy weeks roll over Tuesday morning after Monday Night Football.
+const SEASON_STARTS: Record<number, string> = { 2026: "2026-09-08T00:00:00-04:00" };
 
 export function nflPeriod(now = new Date()) {
   const year = now.getUTCFullYear();
   const season = now.getUTCMonth() < 7 ? year - 1 : year;
-  const start = new Date(SEASON_STARTS[season] ?? `${season}-09-10T00:00:00-04:00`);
+  const start = new Date(SEASON_STARTS[season] ?? `${season}-09-08T00:00:00-04:00`);
   const diff = Math.floor((now.getTime() - start.getTime()) / 604_800_000);
   return { season, week: Math.max(1, Math.min(18, diff + 1)) };
 }

@@ -77,6 +77,7 @@ describe("lineup legality", () => {
 
 describe("time, identity and freshness", () => {
   it("detects 2026 week 2 before Monday night finishes", () => expect(nflPeriod(new Date("2026-09-20T18:00:00Z"))).toEqual({ season: 2026, week: 2 }));
+  it("rolls fantasy recommendations to week 3 on Tuesday", () => expect(nflPeriod(new Date("2026-09-22T14:00:00Z"))).toEqual({ season: 2026, week: 3 }));
   it("uses the real instant across timezones for locks", () => expect(isPlayerLocked("2026-09-20T12:00:00-05:00", new Date("2026-09-20T17:00:01Z"))).toBe(true));
   it("marks stale timestamps", () => expect(isStale("2026-09-20T10:00:00Z", 60_000, new Date("2026-09-20T10:02:00Z"))).toBe(true));
   it("canonicalizes accents and punctuation", () => expect(canonicalPlayerId("Eddy Piñeiro", "SF")).toBe("eddy-pineiro-sf"));
