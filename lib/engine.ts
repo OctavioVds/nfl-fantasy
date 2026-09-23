@@ -142,8 +142,14 @@ export function playerValue(player: RosterPlayer, roster: RosterPlayer[]) {
 }
 
 export function waiverRecommendations(roster: RosterPlayer[], freeAgents: RosterPlayer[]): Recommendation[] {
-  // High-opportunity bench players are trade assets or holds, not waiver cuts.
-  const dropPool = roster.filter((p) => p.slot === "Bench" && !p.locked && (p.opportunityScore ?? 0) < 75);
+  // Protect players supported by at least two strong hold signals, while allowing
+  // popular handcuffs with weak weekly and future value to be upgraded.
+  const isHighValueHold = (p: RosterPlayer) => [
+    (p.opportunityScore ?? 0) >= 75,
+    (p.projection ?? 0) >= 10,
+    (p.futureProjection ?? 0) >= 8,
+  ].filter(Boolean).length >= 2;
+  const dropPool = roster.filter((p) => p.slot === "Bench" && !p.locked && !isHighValueHold(p));
   if (!dropPool.length || !freeAgents.length) return [];
   const quarterbackCount = roster.filter((p) => p.position === "QB" && p.slot !== "IR").length;
 
@@ -158,7 +164,7 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
     const dropValue = playerValue(drop, roster);
     const net = round(candidateValue - dropValue);
     const dataSignals = [candidate.projection, candidate.futureProjection, candidate.opportunityScore, candidate.depthOrder].filter((v) => v != null).length;
-    const confidenceScore = Math.min(10, Math.max(4, Math.round(4 + Math.max(0, net) / 1.5 + dataSignals / 2)));
+    const confidenceScore = Math.min(10, Math.max(3, Math.round(3 + Math.max(0, net) / 2 + (candidate.opportunityScore ?? 50) / 50 + dataSignals / 4)));
     return { candidate, drop, net, candidateValue, confidenceScore };
   }).filter((row) => row.net >= 1).sort((a, b) => Math.round(b.net) - Math.round(a.net)
     || (b.candidate.opportunityScore ?? 0) - (a.candidate.opportunityScore ?? 0)

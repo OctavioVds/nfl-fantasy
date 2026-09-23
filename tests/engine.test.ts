@@ -22,8 +22,12 @@ describe("waiver decisions", () => {
   });
   it("does not recommend a worse free agent", () => expect(waiverRecommendations([p("Hold", "WR", 12)], [p("Worse", "WR", 5, "FA")])).toEqual([]));
   it("does not cut a high-opportunity bench player", () => {
-    const hold = { ...p("Valuable hold", "WR", 8), opportunityScore: 85 };
+    const hold = { ...p("Valuable hold", "WR", 12), opportunityScore: 85 };
     expect(waiverRecommendations([hold], [p("Small upgrade", "WR", 10, "FA")])).toEqual([]);
+  });
+  it("can upgrade a popular handcuff when its weekly and future values are low", () => {
+    const handcuff = { ...p("Handcuff", "RB", 4, "Bench", 4), opportunityScore: 85 };
+    expect(waiverRecommendations([handcuff], [p("Lead back", "RB", 13, "FA")])[0]?.alternative).toBe("Handcuff");
   });
   it("never drops a starter", () => {
     const moves = waiverRecommendations([p("Starter", "WR", 1, "WR"), p("Bench", "RB", 5)], [p("Upgrade", "WR", 20, "FA")]);
