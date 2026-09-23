@@ -114,11 +114,11 @@ function CommandView({ snapshot }: { snapshot: SyncSnapshot }) {
 function LineupView({ starters, bench, historical }: { starters: SyncSnapshot["roster"]; bench: SyncSnapshot["roster"]; historical: boolean }) {
   return <section className="panel lineup-panel">
     <div className="panel-head"><h2>Alineación {starters.some((p) => p.locked) ? "y puntos" : "óptima"}</h2><span>PPR · ESPN + MODELO</span></div>
-    <div className="decision-note">Usa esta alineación en ESPN. Respeta jugadores bloqueados y elige la mayor proyección disponible para cada puesto.</div>
+    <div className="decision-note">Veredicto directo con piso estimado, mediana y techo. El piso es un percentil conservador, no puntos garantizados. Cada fila revela el factor oculto y los datos que faltan.</div>
     <h3>Titulares recomendados</h3>
-    <div className="player-list">{starters.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} />)}</div>
+    <div className="player-list"><DecisionHeader />{starters.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} starter />)}</div>
     <h3>Banca</h3>
-    <div className="player-list">{bench.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} />)}</div>
+    <div className="player-list"><DecisionHeader />{bench.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} starter={false} />)}</div>
   </section>;
 }
 
@@ -153,11 +153,27 @@ function Metric({ label, value, unit, compact = false }: { label: string; value:
   return <div className="metric"><span>{label}</span><strong className={compact ? "compact" : ""}>{value}</strong><small>{unit}</small></div>;
 }
 
-function PlayerRow({ player, historical }: { player: SyncSnapshot["roster"][number]; historical: boolean }) {
+function DecisionHeader() {
+  return <div className="decision-header"><span>Slot / jugador</span><span>Piso</span><span>Mediana</span><span>Techo</span><span>Decisión</span></div>;
+}
+
+function PlayerRow({ player, historical, starter }: { player: SyncSnapshot["roster"][number]; historical: boolean; starter: boolean }) {
   const status = historical ? "HISTÓRICO" : player.locked ? "LOCKED" : "ABIERTO";
   const matchup = player.opponent ? `${player.homeAway === "away" ? "@" : "vs"} ${player.opponent}` : null;
   const conditions = [player.venue, player.weather].filter(Boolean).join(" · ");
-  return <div className="player-row"><span className="slot">{player.slot}</span><div><b>{player.name}</b><small>{player.team} · {player.position}{matchup ? ` · ${matchup}` : ""}{player.injury ? ` · ${player.injury}` : ""}</small>{conditions && <small className="conditions">{conditions}</small>}{player.news && <small className="conditions">Reporte: {player.news}</small>}</div><strong>{player.projection?.toFixed(1) ?? "—"}</strong><span className={historical ? "historical" : player.locked ? "locked" : "open"}>{status}</span></div>;
+  const profile = player.decisionProfile;
+  const pct = (value?: number) => value == null ? "N/D" : `${Math.round(value * 100)}%`;
+  const usage = profile ? [`${profile.sampleGames}J`, `snaps ${pct(profile.snapShare)}`, `targets ${pct(profile.targetShare)}`, `rutas ${pct(profile.routeParticipation)}`, `toques ${profile.touchesPerGame?.toFixed(1) ?? "N/D"}`, `RZ ${profile.redZoneTouchesPerGame?.toFixed(1) ?? "N/D"}`, `I5 ${profile.insideFiveTouchesPerGame?.toFixed(1) ?? "N/D"}`].join(" · ") : "Sin perfil de decisión";
+  const context = [player.overUnder != null ? `O/U ${player.overUnder}` : "O/U N/D", player.spread != null ? `spread ${player.spread > 0 ? "+" : ""}${player.spread}` : "spread N/D", player.windMph != null ? `viento ${player.windMph} mph` : "viento N/D", player.divisional ? "divisional" : null].filter(Boolean).join(" · ");
+  return <div className="player-row">
+    <span className="slot">{player.slot}</span>
+    <div className="player-main"><b>{player.name}</b><small>{player.team} · {player.position}{matchup ? ` · ${matchup}` : ""}{player.injury ? ` · ${player.injury}` : ""}</small></div>
+    <strong>{profile?.floor.toFixed(1) ?? player.floor?.toFixed(1) ?? "—"}</strong>
+    <strong className="median">{profile?.median.toFixed(1) ?? player.projection?.toFixed(1) ?? "—"}</strong>
+    <strong>{profile?.ceiling.toFixed(1) ?? player.ceiling?.toFixed(1) ?? "—"}</strong>
+    <div className="verdict"><b>{player.locked ? "LOCK" : starter ? "SÍ" : "NO"}</b><small>{status}</small></div>
+    <div className="player-detail"><small>{usage}</small><small>{context}</small>{conditions && <small>{conditions}</small>}<small><b>FACTOR:</b> {profile?.hiddenFactor ?? "datos insuficientes"} · cobertura {profile?.confidence ?? 0}%</small>{profile?.missing.length ? <small>Sin confirmar: {profile.missing.join(", ")}</small> : null}{player.news && <small>Reporte: {player.news}</small>}</div>
+  </div>;
 }
 
 function ActionCard({ action, index }: { action: SyncSnapshot["recommendations"][number]; index: number }) {

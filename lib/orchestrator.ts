@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { captureServerEvent } from "./analytics";
 import { getLatestExternalIngest, saveExternalIngest, saveSnapshot } from "./db";
-import { aggregateProjections, canonicalPlayerId, optimizeLineup, rosterManagementRecommendations, simulateWin, topLineupRecommendations, tradeRecommendations, waiverRecommendations } from "./engine";
+import { aggregateProjections, buildDecisionProfile, canonicalPlayerId, optimizeLineup, rosterManagementRecommendations, simulateWin, topLineupRecommendations, tradeRecommendations, waiverRecommendations } from "./engine";
 import { fallbackSnapshot } from "./fallback-data";
 import { fetchEspnNews, fetchEspnScoreboard, mapEspnTeamContexts } from "./providers/espn";
 import { fetchSleeperTrending } from "./providers/sleeper";
-import { fetchSportsDataIoProjections } from "./providers/sportsdataio";
+import { fetchSportsDataIoInjuries, fetchSportsDataIoProjections, fetchSportsDataIoRecentUsage } from "./providers/sportsdataio";
 import { fetchStatsHawkContext } from "./providers/statshawk";
 import type { ExternalSyncPayload } from "./schemas";
 import { externalSyncSchema } from "./schemas";
@@ -44,6 +44,8 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     runAgent("Schedule", () => fetchEspnScoreboard(period.season, period.week)),
     runAgent("WaiverMarket", () => fetchSleeperTrending()),
     runAgent("SportsDataIO", () => fetchSportsDataIoProjections(period.season, period.week)),
+    runAgent("RecentUsage", () => fetchSportsDataIoRecentUsage(period.season, period.week)),
+    runAgent("InjuryReport", () => fetchSportsDataIoInjuries(period.season, period.week)),
     runAgent("StatsHawk", () => fetchStatsHawkContext(period.season)),
     runAgent("BreakingNews", () => fetchEspnNews(100)),
   ]);
@@ -63,16 +65,24 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
   const scheduleEvents = (firstWave.find((r) => r.name === "Schedule")?.data ?? []) as unknown[];
   const newsArticles = (firstWave.find((r) => r.name === "BreakingNews")?.data ?? []) as Awaited<ReturnType<typeof fetchEspnNews>>;
   const scheduleByTeam = mapEspnTeamContexts(scheduleEvents);
+  const recentUsage = (firstWave.find((r) => r.name === "RecentUsage")?.data ?? []) as Awaited<ReturnType<typeof fetchSportsDataIoRecentUsage>>;
+  const recentById = new Map(recentUsage.map((player) => [canonicalPlayerId(player.name, player.team), player.games]));
+  const injuries = (firstWave.find((r) => r.name === "InjuryReport")?.data ?? []) as Awaited<ReturnType<typeof fetchSportsDataIoInjuries>>;
+  const risksFor = (team: string, opponent?: string) => injuryContext(injuries, team, opponent);
   const roster: RosterPlayer[] = league.roster.map((p) => {
     const game = scheduleByTeam.get(p.team.toUpperCase());
     const kickoff = p.kickoff ?? game?.kickoff;
+    const risks = risksFor(p.team, game?.opponent);
     const playerNews = newsArticles.find((article) => article.athleteNames.some((name) => canonicalPlayerId(name) === canonicalPlayerId(p.name)) && `${article.headline} ${article.description ?? ""}`.toLowerCase().includes(p.name.split(" ").at(-1)!.toLowerCase()));
     return ({
     canonicalPlayerId: canonicalPlayerId(p.name, p.team), name: p.name, team: p.team, position: p.position,
     slot: p.slot, projection: p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore,
     depthOrder: p.depthOrder, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue,
-    weather: game?.weather, locked: isPlayerLocked(kickoff), injury: p.injury,
+    weather: game?.weather, windMph: game?.windMph, overUnder: game?.overUnder, spread: game?.spread,
+    divisional: game?.divisional, shortWeek: game?.shortWeek, locked: isPlayerLocked(kickoff), injury: p.injury,
+    ...risks,
     news: playerNews?.headline, newsTimestamp: playerNews?.published,
+    recentGames: recentById.get(canonicalPlayerId(p.name, p.team)),
   }); });
   const sportsData = (firstWave.find((r) => r.name === "SportsDataIO")?.data ?? []) as Awaited<ReturnType<typeof fetchSportsDataIoProjections>>;
   const sportsById = new Map(sportsData.map((p) => [canonicalPlayerId(p.name, p.team), p]));
@@ -96,6 +106,10 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
       if (agg) { p.projection = agg.median; p.floor = agg.floor; p.ceiling = agg.ceiling; }
       if (sports?.futureProjection != null) p.futureProjection = sports.futureProjection;
     }
+    p.decisionProfile = buildDecisionProfile(p);
+    if (!showingCurrentActual) {
+      p.projection = p.decisionProfile.median; p.floor = p.decisionProfile.floor; p.ceiling = p.decisionProfile.ceiling;
+    }
   }
   const freeAgents: RosterPlayer[] = league.freeAgents.map((p) => {
     const id = canonicalPlayerId(p.name, p.team);
@@ -107,7 +121,10 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     const agg = aggregateProjections(projections);
     const game = scheduleByTeam.get(p.team.toUpperCase());
     const kickoff = p.kickoff ?? sports?.kickoff ?? game?.kickoff;
-    return { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: "FA", projection: agg?.median ?? p.projection, futureProjection: sports?.futureProjection ?? p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, floor: agg?.floor, ceiling: agg?.ceiling, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue, weather: game?.weather, locked: isPlayerLocked(kickoff), injury: p.injury ?? sports?.injury };
+    const player: RosterPlayer = { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: "FA", projection: agg?.median ?? p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, floor: agg?.floor, ceiling: agg?.ceiling, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue, weather: game?.weather, windMph: game?.windMph, overUnder: game?.overUnder, spread: game?.spread, divisional: game?.divisional, shortWeek: game?.shortWeek, locked: isPlayerLocked(kickoff), injury: p.injury ?? sports?.injury, recentGames: recentById.get(id), ...risksFor(p.team, game?.opponent) };
+    player.decisionProfile = buildDecisionProfile(player);
+    player.projection = player.decisionProfile.median; player.floor = player.decisionProfile.floor; player.ceiling = player.decisionProfile.ceiling;
+    return player;
   });
 
   const enrichLeaguePlayers = (players: ExternalSyncPayload["roster"]): RosterPlayer[] => players.map((p) => {
@@ -120,7 +137,10 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     const agg = aggregateProjections(projections);
     const game = scheduleByTeam.get(p.team.toUpperCase());
     const kickoff = p.kickoff ?? sports?.kickoff ?? game?.kickoff;
-    return { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: p.slot, projection: agg?.median ?? p.projection, futureProjection: sports?.futureProjection ?? p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, floor: agg?.floor, ceiling: agg?.ceiling, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue, weather: game?.weather, locked: isPlayerLocked(kickoff), injury: p.injury ?? sports?.injury };
+    const player: RosterPlayer = { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: p.slot, projection: agg?.median ?? p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, floor: agg?.floor, ceiling: agg?.ceiling, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue, weather: game?.weather, windMph: game?.windMph, overUnder: game?.overUnder, spread: game?.spread, divisional: game?.divisional, shortWeek: game?.shortWeek, locked: isPlayerLocked(kickoff), injury: p.injury ?? sports?.injury, recentGames: recentById.get(id), ...risksFor(p.team, game?.opponent) };
+    player.decisionProfile = buildDecisionProfile(player);
+    player.projection = player.decisionProfile.median; player.floor = player.decisionProfile.floor; player.ceiling = player.decisionProfile.ceiling;
+    return player;
   });
   const activeOpponent = useNextOpponent ? league.nextOpponent : league.opponent;
   const opponentRoster = enrichLeaguePlayers(activeOpponent?.roster ?? []);
@@ -164,7 +184,7 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
       })
       .map((r) => ({ ...r, actionable: !stale })),
     agents: [...firstWave, ...secondWave].map((r) => r.run),
-    sources: [{ name: league.source, sourceTimestamp: league.sourceTimestamp, fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" }, ...(scheduleEvents.length ? [{ name: "ESPN NFL Scoreboard", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...(newsArticles.length ? [{ name: "ESPN NFL News", sourceTimestamp: newsArticles[0]?.published ?? started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...(sportsData.length ? [{ name: "SportsDataIO", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...((firstWave.find((r) => r.name === "StatsHawk")?.data) ? [{ name: "StatsHawk NFL", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : [])],
+    sources: [{ name: league.source, sourceTimestamp: league.sourceTimestamp, fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" }, ...(scheduleEvents.length ? [{ name: "ESPN NFL Scoreboard + clima/odds", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...(newsArticles.length ? [{ name: "ESPN NFL News", sourceTimestamp: newsArticles[0]?.published ?? started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...(sportsData.length ? [{ name: "SportsDataIO proyecciones", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...(recentUsage.length ? [{ name: "SportsDataIO estadísticas últimos 3", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "post" as const }] : []), ...(injuries.length ? [{ name: "SportsDataIO lesiones", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "pre" as const }] : []), ...((firstWave.find((r) => r.name === "StatsHawk")?.data) ? [{ name: "StatsHawk NFL", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : [])],
     warnings: [...(stale ? ["STALE DATA WARNING: la plantilla de liga supera 24 horas; vuelve a importar ESPN/Flaim."] : []), ...(failed.length ? [`DEGRADED DATA: ${failed.map((r) => r.name).join(", ")}.`] : [])],
     pendingMoves: league.pendingMoves,
   };
@@ -184,4 +204,21 @@ function injuryFromNews(headline?: string) {
 function mostSevereInjury(...statuses: Array<string | undefined>) {
   const severity = (status?: string) => /^(IR|O|OUT|INACTIVE)$/i.test(status ?? "") ? 4 : /^(D|DOUBTFUL)$/i.test(status ?? "") ? 3 : /^(Q|QUESTIONABLE)$/i.test(status ?? "") ? 2 : /^(P|PROBABLE|ACTIVE)$/i.test(status ?? "") ? 1 : 0;
   return statuses.filter(Boolean).sort((a, b) => severity(b) - severity(a))[0];
+}
+
+function injuryContext(injuries: Awaited<ReturnType<typeof fetchSportsDataIoInjuries>>, team: string, opponent?: string) {
+  if (!injuries.length) return {
+    offensiveLineAbsences: undefined, opponentCoverageAbsences: undefined,
+    opponentFrontSevenAbsences: undefined, quarterbackRisk: undefined,
+  };
+  const weight = (status?: string) => /(?:IR|OUT|INACTIVE|DOUBTFUL)/i.test(status ?? "") ? 1 : /QUESTIONABLE/i.test(status ?? "") ? 0.35 : 0;
+  const sumPositions = (targetTeam: string | undefined, positions: string[]) => injuries
+    .filter((injury) => injury.team.toUpperCase() === targetTeam?.toUpperCase() && positions.includes((injury.position ?? "").toUpperCase()))
+    .reduce((sum, injury) => sum + weight(injury.status), 0);
+  return {
+    offensiveLineAbsences: sumPositions(team, ["C", "G", "OG", "T", "OT", "OL"]),
+    opponentCoverageAbsences: sumPositions(opponent, ["CB", "DB", "S", "FS", "SS"]),
+    opponentFrontSevenAbsences: sumPositions(opponent, ["DE", "DL", "DT", "LB", "ILB", "OLB"]),
+    quarterbackRisk: sumPositions(team, ["QB"]) >= 0.35,
+  };
 }

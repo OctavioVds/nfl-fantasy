@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { aggregateProjections, canonicalPlayerId, optimizeLineup, pprPoints, rosterManagementRecommendations, simulateWin, topLineupRecommendations, tradeRecommendations, waiverRecommendations } from "@/lib/engine";
+import { aggregateProjections, buildDecisionProfile, canonicalPlayerId, optimizeLineup, pprPoints, rosterManagementRecommendations, simulateWin, topLineupRecommendations, tradeRecommendations, waiverRecommendations } from "@/lib/engine";
 import { isPlayerLocked, isStale, nflPeriod } from "@/lib/time";
 import type { PlayerProjection, RosterPlayer } from "@/lib/types";
 import { mapEspnTeamContexts } from "@/lib/providers/espn";
+import { mapSportsDataRecentUsage } from "@/lib/providers/sportsdataio";
 
 describe("scoring and projections", () => {
   it("calculates full PPR scoring", () => expect(pprPoints({ rushYards: 50, receptions: 5, recYards: 60, rushTd: 1 })).toBe(22));
@@ -120,5 +121,34 @@ describe("ESPN schedule context", () => {
     const result = mapEspnTeamContexts([{ date: "2026-09-20T17:00:00Z", competitions: [{ venue: { fullName: "Example Field" }, weather: { displayValue: "Cloudy, 68°" }, competitors: [{ homeAway: "home", team: { abbreviation: "SF" } }, { homeAway: "away", team: { abbreviation: "MIA" } }] }] }]);
     expect(result.get("SF")).toMatchObject({ opponent: "MIA", homeAway: "home", venue: "Example Field", weather: "Cloudy, 68°" });
     expect(result.get("MIA")).toMatchObject({ opponent: "SF", homeAway: "away" });
+  });
+  it("maps wind, Vegas lines, short week and divisional status", () => {
+    const result = mapEspnTeamContexts([{ date: "2026-09-25T00:15:00Z", competitions: [{ weather: { displayValue: "Wind 19 mph" }, odds: [{ overUnder: 50.5, details: "SF -7.5" }], competitors: [{ homeAway: "home", team: { abbreviation: "SF" } }, { homeAway: "away", team: { abbreviation: "ARI" } }] }] }]);
+    expect(result.get("SF")).toMatchObject({ windMph: 19, overUnder: 50.5, spread: -7.5, divisional: true, shortWeek: true });
+    expect(result.get("ARI")?.spread).toBe(7.5);
+  });
+});
+
+describe("decision range", () => {
+  const receiver: RosterPlayer = { canonicalPlayerId: "wr", name: "Receiver", team: "SF", position: "WR", slot: "WR", projection: 16, floor: 10, ceiling: 24 };
+  it("penalizes airborne outcomes in wind above 15 mph", () => {
+    expect(buildDecisionProfile({ ...receiver, windMph: 20 }).median).toBeLessThan(buildDecisionProfile({ ...receiver, windMph: 0 }).median);
+  });
+  it("penalizes an offense with missing linemen", () => {
+    expect(buildDecisionProfile({ ...receiver, offensiveLineAbsences: 2 }).floor).toBeLessThan(buildDecisionProfile({ ...receiver, offensiveLineAbsences: 0 }).floor);
+  });
+  it("detects a touchdown spike without sustainable opportunity", () => {
+    const profile = buildDecisionProfile({ ...receiver, recentGames: [
+      { week: 2, fantasyPointsPpr: 24, targets: 3, touches: 3, touchdowns: 2 },
+      { week: 1, fantasyPointsPpr: 8, targets: 5, touches: 5, touchdowns: 0 },
+    ] });
+    expect(profile.hiddenFactor).toContain("TD");
+  });
+  it("computes team target share from the same weekly feed", () => {
+    const rows = mapSportsDataRecentUsage([
+      { PlayerID: 1, Name: "A", Team: "SF", Position: "WR", Week: 2, ReceivingTargets: 8, Receptions: 5, OffensiveSnapsPlayed: 50, OffensiveTeamSnaps: 60 },
+      { PlayerID: 2, Name: "B", Team: "SF", Position: "WR", Week: 2, ReceivingTargets: 12, Receptions: 7, OffensiveSnapsPlayed: 45, OffensiveTeamSnaps: 60 },
+    ]);
+    expect(rows.find((row) => row.name === "A")?.games[0].targetShare).toBe(0.4);
   });
 });

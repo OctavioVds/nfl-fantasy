@@ -7,6 +7,11 @@ export interface EspnTeamContext {
   kickoff?: string;
   venue?: string;
   weather?: string;
+  windMph?: number;
+  overUnder?: number;
+  spread?: number;
+  divisional?: boolean;
+  shortWeek?: boolean;
 }
 
 type EspnEvent = {
@@ -14,7 +19,8 @@ type EspnEvent = {
   competitions?: Array<{
     date?: string;
     venue?: { fullName?: string; indoor?: boolean };
-    weather?: { displayValue?: string; temperature?: number; conditionId?: string };
+    weather?: { displayValue?: string; temperature?: number; conditionId?: string; windSpeed?: number; windDirection?: string };
+    odds?: Array<{ overUnder?: number; details?: string; homeTeamOdds?: { favorite?: boolean }; awayTeamOdds?: { favorite?: boolean } }>;
     competitors?: Array<{ homeAway?: string; team?: { abbreviation?: string } }>;
   }>;
 };
@@ -27,6 +33,10 @@ export interface EspnNewsArticle {
 }
 
 const TEAM_ALIASES: Record<string, string> = { JAC: "JAX", WSH: "WAS", LA: "LAR" };
+const DIVISIONS = [
+  ["BUF", "MIA", "NE", "NYJ"], ["BAL", "CIN", "CLE", "PIT"], ["HOU", "IND", "JAX", "TEN"], ["DEN", "KC", "LV", "LAC"],
+  ["DAL", "NYG", "PHI", "WAS"], ["CHI", "DET", "GB", "MIN"], ["ATL", "CAR", "NO", "TB"], ["ARI", "LAR", "SF", "SEA"],
+];
 
 function normalizeTeam(team: string | undefined) {
   const value = (team ?? "").toUpperCase();
@@ -43,15 +53,40 @@ export function mapEspnTeamContexts(events: unknown[]): Map<string, EspnTeamCont
     const weather = competition?.venue?.indoor
       ? "Estadio cerrado"
       : competition?.weather?.displayValue ?? (competition?.weather?.temperature != null ? `${competition.weather.temperature}°F` : undefined);
+    const windMph = competition?.venue?.indoor ? 0 : competition?.weather?.windSpeed ?? parseWind(weather);
+    const odds = competition?.odds?.[0];
+    const kickoff = competition?.date ?? raw.date;
+    const shortWeek = kickoff ? [4, 5].includes(new Date(kickoff).getUTCDay()) : false;
     for (const competitor of competitors) {
       const team = normalizeTeam(competitor.team?.abbreviation);
       const opponent = normalizeTeam(competitors.find((item) => item !== competitor)?.team?.abbreviation);
       const homeAway = competitor.homeAway === "home" ? "home" : competitor.homeAway === "away" ? "away" : undefined;
       if (!team || !opponent || !homeAway) continue;
-      contexts.set(team, { team, opponent, homeAway, kickoff: competition?.date ?? raw.date, venue, weather });
+      contexts.set(team, {
+        team, opponent, homeAway, kickoff, venue, weather, windMph, overUnder: odds?.overUnder,
+        spread: teamSpread(team, homeAway, odds),
+        divisional: DIVISIONS.some((division) => division.includes(team) && division.includes(opponent)),
+        shortWeek,
+      });
     }
   }
   return contexts;
+}
+
+function parseWind(weather?: string) {
+  const match = weather?.match(/(?:wind|winds?)\D{0,12}(\d+(?:\.\d+)?)\s*(?:mph)?/i);
+  return match ? Number(match[1]) : undefined;
+}
+
+function teamSpread(team: string, homeAway: "home" | "away", odds?: { details?: string; homeTeamOdds?: { favorite?: boolean }; awayTeamOdds?: { favorite?: boolean } }) {
+  const match = odds?.details?.match(/^([A-Z]{2,3})\s+(-?\d+(?:\.\d+)?)$/i);
+  if (match) {
+    const favorite = normalizeTeam(match[1]);
+    const magnitude = Math.abs(Number(match[2]));
+    return team === favorite ? -magnitude : magnitude;
+  }
+  const favorite = homeAway === "home" ? odds?.homeTeamOdds?.favorite : odds?.awayTeamOdds?.favorite;
+  return favorite === true ? -0.1 : favorite === false ? 0.1 : undefined;
 }
 
 export async function fetchEspnScoreboard(season: number, week: number) {

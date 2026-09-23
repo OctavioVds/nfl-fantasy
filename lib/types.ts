@@ -24,6 +24,43 @@ export interface PlayerProjection {
   sourceTimestamp: string;
 }
 
+export interface RecentGameUsage {
+  week: number;
+  fantasyPointsPpr?: number;
+  snapShare?: number;
+  targets?: number;
+  targetShare?: number;
+  routes?: number;
+  routeParticipation?: number;
+  carries?: number;
+  receptions?: number;
+  touches?: number;
+  redZoneTouches?: number;
+  insideFiveTouches?: number;
+  touchdowns?: number;
+  yprr?: number;
+  ycoPerAttempt?: number;
+}
+
+export interface PlayerDecisionProfile {
+  floor: number;
+  median: number;
+  ceiling: number;
+  confidence: number;
+  sampleGames: number;
+  snapShare?: number;
+  targetShare?: number;
+  routeParticipation?: number;
+  touchesPerGame?: number;
+  redZoneTouchesPerGame?: number;
+  insideFiveTouchesPerGame?: number;
+  yprr?: number;
+  ycoPerAttempt?: number;
+  gameScript: string;
+  hiddenFactor: string;
+  missing: string[];
+}
+
 export interface RosterPlayer {
   canonicalPlayerId: string;
   name: string;
@@ -41,10 +78,22 @@ export interface RosterPlayer {
   homeAway?: "home" | "away";
   venue?: string;
   weather?: string;
+  windMph?: number;
+  overUnder?: number;
+  spread?: number;
+  divisional?: boolean;
+  shortWeek?: boolean;
+  offensiveLineAbsences?: number;
+  opponentCoverageAbsences?: number;
+  opponentFrontSevenAbsences?: number;
+  quarterbackRisk?: boolean;
+  opponentPointsAllowedL3?: number;
   locked?: boolean;
   injury?: string;
   news?: string;
   newsTimestamp?: string;
+  recentGames?: RecentGameUsage[];
+  decisionProfile?: PlayerDecisionProfile;
 }
 
 export interface Recommendation {

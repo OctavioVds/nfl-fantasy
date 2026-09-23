@@ -1,4 +1,4 @@
-import type { PlayerProjection, Recommendation, RosterPlayer, TradePartner } from "./types";
+import type { PlayerDecisionProfile, PlayerProjection, Recommendation, RosterPlayer, TradePartner } from "./types";
 
 export function pprPoints(input: {
   passYards?: number; passTd?: number; interceptions?: number;
@@ -26,13 +26,111 @@ export function aggregateProjections(projections: PlayerProjection[]) {
 
 export const LINEUP_SWAP_THRESHOLD = 3;
 
+export function buildDecisionProfile(player: RosterPlayer): PlayerDecisionProfile {
+  const games = player.recentGames ?? [];
+  const points = games.flatMap((game) => game.fantasyPointsPpr == null ? [] : [game.fantasyPointsPpr]);
+  const average = (key: keyof (typeof games)[number]) => {
+    const values = games.flatMap((game) => typeof game[key] === "number" ? [game[key] as number] : []);
+    return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
+  };
+  let median = player.projection ?? (points.length ? points.reduce((sum, value) => sum + value, 0) / points.length : 0);
+  let floor = player.floor ?? median * 0.67;
+  let ceiling = player.ceiling ?? median * 1.38;
+  const snapShare = average("snapShare");
+  const targetShare = average("targetShare");
+  const routeParticipation = average("routeParticipation");
+  const touchesPerGame = average("touches");
+  const redZoneTouchesPerGame = average("redZoneTouches");
+  const insideFiveTouchesPerGame = average("insideFiveTouches");
+  const yprr = average("yprr");
+  const ycoPerAttempt = average("ycoPerAttempt");
+  const factors: string[] = [];
+
+  if (points.length >= 2) {
+    const recentFloor = Math.min(...points);
+    const recentCeiling = Math.max(...points);
+    floor = floor * 0.55 + recentFloor * 0.45;
+    ceiling = ceiling * 0.55 + recentCeiling * 0.45;
+  }
+  if ((snapShare ?? 0) >= 0.72 && ((targetShare ?? 0) >= 0.18 || (touchesPerGame ?? 0) >= 14)) {
+    floor *= 1.05;
+    factors.push("volumen estable eleva el piso");
+  }
+  if ((player.windMph ?? 0) > 15 && ["QB", "WR", "TE", "K"].includes(player.position)) {
+    median *= 0.91; floor *= 0.88; ceiling *= 0.9;
+    factors.push(`viento ${round(player.windMph!)} mph penaliza pase/pateo`);
+  } else if ((player.windMph ?? 0) > 15 && player.position === "RB") {
+    median *= 1.02; factors.push("viento favorece volumen terrestre");
+  }
+  if ((player.overUnder ?? 45) >= 49) { ceiling *= 1.05; factors.push(`total alto ${player.overUnder}`); }
+  if ((player.overUnder ?? 45) <= 39) { median *= 0.96; ceiling *= 0.94; factors.push(`total bajo ${player.overUnder}`); }
+  if ((player.spread ?? 0) <= -7) {
+    if (player.position === "RB") { median *= 1.05; floor *= 1.05; factors.push("favorito amplio favorece acarreos tardíos"); }
+    if (["QB", "WR"].includes(player.position)) { ceiling *= 0.97; factors.push("favorito amplio limita volumen aéreo tardío"); }
+  }
+  if ((player.spread ?? 0) >= 7 && ["WR", "TE"].includes(player.position)) {
+    ceiling *= 1.05; factors.push("underdog amplio favorece volumen de remontada");
+  }
+  if ((player.offensiveLineAbsences ?? 0) >= 1) {
+    const penalty = Math.min(0.14, player.offensiveLineAbsences! * 0.045);
+    median *= 1 - penalty; floor *= 1 - penalty * 1.2;
+    factors.push(`${round(player.offensiveLineAbsences!)} bajas ponderadas en OL`);
+  }
+  if ((player.opponentCoverageAbsences ?? 0) >= 1 && ["QB", "WR", "TE"].includes(player.position)) {
+    ceiling *= 1.04; median *= 1.02; factors.push("bajas relevantes en cobertura rival");
+  }
+  if ((player.opponentFrontSevenAbsences ?? 0) >= 1 && player.position === "RB") {
+    ceiling *= 1.04; median *= 1.02; factors.push("bajas en front seven rival");
+  }
+  if (player.quarterbackRisk && ["WR", "TE", "RB"].includes(player.position)) {
+    median *= 0.91; floor *= 0.88; factors.push("QB del equipo figura lesionado");
+  }
+  if (player.divisional) { ceiling *= 0.97; factors.push("juego divisional reduce ligeramente el techo"); }
+  if (player.shortWeek) { floor *= 0.97; median *= 0.98; factors.push("semana corta"); }
+  if (/^(Q|QUESTIONABLE)$/i.test(player.injury ?? "")) { floor *= 0.86; median *= 0.94; factors.push("designación cuestionable"); }
+  if (/^(D|DOUBTFUL)$/i.test(player.injury ?? "")) { floor *= 0.45; median *= 0.72; factors.push("alta probabilidad de limitación/inactividad"); }
+  if (/^(IR|O|OUT|INACTIVE)$/i.test(player.injury ?? "")) { floor = 0; median = 0; ceiling = 0; factors.push("no disponible"); }
+
+  const latest = games[0];
+  const priorAverage = games.slice(1).flatMap((game) => game.fantasyPointsPpr == null ? [] : [game.fantasyPointsPpr]);
+  const comparison = priorAverage.length ? priorAverage.reduce((sum, value) => sum + value, 0) / priorAverage.length : undefined;
+  const lowOpportunity = (latest?.touches ?? 0) < 8 && (latest?.targets ?? 0) < 6;
+  if (latest?.fantasyPointsPpr != null && comparison != null && latest.fantasyPointsPpr > comparison * 1.5 && (latest.touchdowns ?? 0) >= 1 && lowOpportunity) {
+    median *= 0.95; ceiling *= 0.94; factors.unshift("pico reciente dependió de TD con poco volumen");
+  }
+
+  const missing = [
+    snapShare == null ? "snaps" : null,
+    targetShare == null && ["WR", "TE", "RB"].includes(player.position) ? "target share" : null,
+    routeParticipation == null && ["WR", "TE", "RB"].includes(player.position) ? "route participation" : null,
+    redZoneTouchesPerGame == null && ["RB", "WR", "TE"].includes(player.position) ? "toques RZ" : null,
+    player.position === "RB" && ycoPerAttempt == null ? "YCO/A" : null,
+    ["WR", "TE"].includes(player.position) && yprr == null ? "YPRR" : null,
+    player.overUnder == null ? "O/U" : null,
+    player.spread == null ? "spread" : null,
+    player.windMph == null ? "viento" : null,
+    player.offensiveLineAbsences == null ? "salud OL" : null,
+    player.opponentCoverageAbsences == null || player.opponentFrontSevenAbsences == null ? "bajas defensivas rivales" : null,
+  ].filter((value): value is string => Boolean(value));
+  const expected = player.position === "DST" || player.position === "K" ? 4 : player.position === "QB" ? 6 : 9;
+  const confidence = Math.max(20, Math.round(100 * Math.max(0, expected - missing.length) / expected));
+  const gameScript = player.spread == null ? "Sin spread confirmado" : player.spread <= -7 ? "Favorito amplio: posible modo reloj" : player.spread >= 7 ? "Underdog amplio: posible remontada" : "Guion competitivo";
+  return {
+    floor: round(Math.max(0, Math.min(floor, median))), median: round(Math.max(0, median)), ceiling: round(Math.max(median, ceiling)),
+    confidence, sampleGames: games.length, snapShare, targetShare, routeParticipation, touchesPerGame,
+    redZoneTouchesPerGame, insideFiveTouchesPerGame, yprr, ycoPerAttempt, gameScript,
+    hiddenFactor: factors[0] ?? (missing.length ? `faltan ${missing.slice(0, 2).join(" y ")}` : "volumen y contexto sin alerta dominante"), missing,
+  };
+}
+
 export function lineupDecisionScore(player: RosterPlayer) {
-  const projection = player.projection ?? 0;
+  const projection = player.decisionProfile?.median ?? player.projection ?? 0;
+  const floorAdjustment = player.decisionProfile ? (player.decisionProfile.floor - projection) * 0.2 : 0;
   const opportunity = player.opportunityScore == null ? 0 : Math.max(-1, Math.min(1, (player.opportunityScore - 70) / 25));
   const depth = player.depthOrder === 1 ? 0.6 : player.depthOrder === 2 ? 0.15 : player.depthOrder && player.depthOrder >= 3 ? -0.6 : 0;
   const status = (player.injury ?? "").toUpperCase();
   const injury = /^(IR|O|OUT|INACTIVE)$/.test(status) ? -100 : /^(D|DOUBTFUL)$/.test(status) ? -8 : /^(Q|QUESTIONABLE)$/.test(status) ? -2 : 0;
-  return projection + opportunity + depth + injury;
+  return projection + floorAdjustment + opportunity + depth + injury;
 }
 
 export function optimizeLineup(players: RosterPlayer[]) {
@@ -80,7 +178,7 @@ export function topLineupRecommendations(players: RosterPlayer[]): Recommendatio
     const replacement = current.filter((p) => !p.locked && (p.position === starter.position || (["RB", "WR"].includes(p.position) && ["RB", "WR"].includes(starter.position))))
       .sort((a, b) => (a.projection ?? 99) - (b.projection ?? 99))[0];
     if (!replacement || (starter.projection ?? 0) <= (replacement.projection ?? 0)) continue;
-    const delta = round((starter.projection ?? 0) - (replacement.projection ?? 0));
+    const delta = round((starter.decisionProfile?.median ?? starter.projection ?? 0) - (replacement.decisionProfile?.median ?? replacement.projection ?? 0));
     const safetyDelta = round(lineupDecisionScore(starter) - lineupDecisionScore(replacement));
     if (safetyDelta < LINEUP_SWAP_THRESHOLD) continue;
     moves.push({
@@ -95,7 +193,7 @@ export function topLineupRecommendations(players: RosterPlayer[]): Recommendatio
       why: [
         { type: "FACT", text: `${starter.name} está en tu banca y ${replacement.name} aparece actualmente como titular.` },
         { type: "MODEL", text: `Ventaja mediana estimada: +${delta} puntos PPR; ventaja ajustada por seguridad: +${safetyDelta}.` },
-        { type: "INFERENCE", text: `El cambio supera el umbral conservador de ${LINEUP_SWAP_THRESHOLD} puntos después de considerar volumen, profundidad y lesión.` },
+        { type: "INFERENCE", text: `Factor decisivo: ${starter.decisionProfile?.hiddenFactor ?? `supera el umbral conservador de ${LINEUP_SWAP_THRESHOLD} puntos`}.` },
       ],
       actionable: true,
       priority: 1,
