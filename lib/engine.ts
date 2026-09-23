@@ -87,6 +87,13 @@ export function buildDecisionProfile(player: RosterPlayer): PlayerDecisionProfil
   }
   if (player.divisional) { ceiling *= 0.97; factors.push("juego divisional reduce ligeramente el techo"); }
   if (player.shortWeek) { floor *= 0.97; median *= 0.98; factors.push("semana corta"); }
+  if (player.crossCountryTravel) { floor *= 0.97; median *= 0.98; factors.push("viaje de al menos dos husos horarios"); }
+  const allowedBaseline: Partial<Record<RosterPlayer["position"], number>> = { QB: 20, RB: 24, WR: 36, TE: 13, K: 8 };
+  const baseline = allowedBaseline[player.position];
+  if (baseline && player.opponentPointsAllowedL3 != null) {
+    if (player.opponentPointsAllowedL3 >= baseline * 1.15) { median *= 1.03; ceiling *= 1.05; factors.unshift(`rival permite ${player.opponentPointsAllowedL3} PPR recientes a ${player.position}`); }
+    if (player.opponentPointsAllowedL3 <= baseline * 0.85) { median *= 0.97; ceiling *= 0.95; factors.unshift(`rival limita a ${player.position}: ${player.opponentPointsAllowedL3} PPR recientes`); }
+  }
   if (/^(Q|QUESTIONABLE)$/i.test(player.injury ?? "")) { floor *= 0.86; median *= 0.94; factors.push("designación cuestionable"); }
   if (/^(D|DOUBTFUL)$/i.test(player.injury ?? "")) { floor *= 0.45; median *= 0.72; factors.push("alta probabilidad de limitación/inactividad"); }
   if (/^(IR|O|OUT|INACTIVE)$/i.test(player.injury ?? "")) { floor = 0; median = 0; ceiling = 0; factors.push("no disponible"); }
@@ -111,6 +118,7 @@ export function buildDecisionProfile(player: RosterPlayer): PlayerDecisionProfil
     player.windMph == null ? "viento" : null,
     player.offensiveLineAbsences == null ? "salud OL" : null,
     player.opponentCoverageAbsences == null || player.opponentFrontSevenAbsences == null ? "bajas defensivas rivales" : null,
+    player.opponentPointsAllowedL3 == null && player.position !== "DST" ? "puntos permitidos L3" : null,
   ].filter((value): value is string => Boolean(value));
   const expected = player.position === "DST" || player.position === "K" ? 4 : player.position === "QB" ? 6 : 9;
   const confidence = Math.max(20, Math.round(100 * Math.max(0, expected - missing.length) / expected));

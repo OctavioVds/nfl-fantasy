@@ -164,7 +164,7 @@ function PlayerRow({ player, historical, starter }: { player: SyncSnapshot["rost
   const profile = player.decisionProfile;
   const pct = (value?: number) => value == null ? "N/D" : `${Math.round(value * 100)}%`;
   const usage = profile ? [`${profile.sampleGames}J`, `snaps ${pct(profile.snapShare)}`, `targets ${pct(profile.targetShare)}`, `rutas ${pct(profile.routeParticipation)}`, `toques ${profile.touchesPerGame?.toFixed(1) ?? "N/D"}`, `RZ ${profile.redZoneTouchesPerGame?.toFixed(1) ?? "N/D"}`, `I5 ${profile.insideFiveTouchesPerGame?.toFixed(1) ?? "N/D"}`].join(" · ") : "Sin perfil de decisión";
-  const context = [player.overUnder != null ? `O/U ${player.overUnder}` : "O/U N/D", player.spread != null ? `spread ${player.spread > 0 ? "+" : ""}${player.spread}` : "spread N/D", player.windMph != null ? `viento ${player.windMph} mph` : "viento N/D", player.divisional ? "divisional" : null].filter(Boolean).join(" · ");
+  const context = [player.overUnder != null ? `O/U ${player.overUnder}` : "O/U N/D", player.spread != null ? `spread ${player.spread > 0 ? "+" : ""}${player.spread}` : "spread N/D", player.windMph != null ? `viento ${player.windMph} mph` : "viento N/D", player.opponentPointsAllowedL3 != null ? `rival L3 ${player.opponentPointsAllowedL3} PPR a ${player.position}` : "rival L3 N/D", player.divisional ? "divisional" : null, player.shortWeek ? "semana corta" : null, player.crossCountryTravel ? "viaje largo" : null].filter(Boolean).join(" · ");
   return <div className="player-row">
     <span className="slot">{player.slot}</span>
     <div className="player-main"><b>{player.name}</b><small>{player.team} · {player.position}{matchup ? ` · ${matchup}` : ""}{player.injury ? ` · ${player.injury}` : ""}</small></div>

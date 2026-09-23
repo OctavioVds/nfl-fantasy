@@ -18,7 +18,7 @@ async function runAgent(name: string, fn: () => Promise<unknown>, mode: AgentRun
   const started = Date.now();
   try {
     const data = await fn();
-    const records = Array.isArray(data) ? data.length : data == null ? 0 : 1;
+    const records = Array.isArray(data) ? data.length : data && typeof data === "object" && "players" in data && Array.isArray(data.players) ? data.players.length : data == null ? 0 : 1;
     const emptyExternal = mode === "external" && records === 0;
     return { name, data, run: { name, status: emptyExternal ? "degraded" : mode === "external" ? "ok" : "cached", latencyMs: Date.now() - started, cacheHit: mode !== "external", mode, records, message: emptyExternal ? "La fuente respondió sin registros." : mode === "external" ? `${records} registro(s) recibidos de la fuente.` : mode === "snapshot" ? "Snapshot persistido; no realizó una consulta externa." : "Cálculo local sobre los datos recibidos." } };
   }
@@ -65,8 +65,10 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
   const scheduleEvents = (firstWave.find((r) => r.name === "Schedule")?.data ?? []) as unknown[];
   const newsArticles = (firstWave.find((r) => r.name === "BreakingNews")?.data ?? []) as Awaited<ReturnType<typeof fetchEspnNews>>;
   const scheduleByTeam = mapEspnTeamContexts(scheduleEvents);
-  const recentUsage = (firstWave.find((r) => r.name === "RecentUsage")?.data ?? []) as Awaited<ReturnType<typeof fetchSportsDataIoRecentUsage>>;
+  const recentBundle = (firstWave.find((r) => r.name === "RecentUsage")?.data ?? { players: [], defenseAllowed: [] }) as Awaited<ReturnType<typeof fetchSportsDataIoRecentUsage>>;
+  const recentUsage = recentBundle.players;
   const recentById = new Map(recentUsage.map((player) => [canonicalPlayerId(player.name, player.team), player.games]));
+  const defenseAllowed = new Map(recentBundle.defenseAllowed.map((row) => [`${row.team.toUpperCase()}|${row.position}`, row.pointsPerGame]));
   const injuries = (firstWave.find((r) => r.name === "InjuryReport")?.data ?? []) as Awaited<ReturnType<typeof fetchSportsDataIoInjuries>>;
   const risksFor = (team: string, opponent?: string) => injuryContext(injuries, team, opponent);
   const roster: RosterPlayer[] = league.roster.map((p) => {
@@ -79,7 +81,9 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     slot: p.slot, projection: p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore,
     depthOrder: p.depthOrder, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue,
     weather: game?.weather, windMph: game?.windMph, overUnder: game?.overUnder, spread: game?.spread,
-    divisional: game?.divisional, shortWeek: game?.shortWeek, locked: isPlayerLocked(kickoff), injury: p.injury,
+    divisional: game?.divisional, shortWeek: game?.shortWeek, crossCountryTravel: game?.crossCountryTravel,
+    opponentPointsAllowedL3: game?.opponent ? defenseAllowed.get(`${game.opponent}|${p.position}`) : undefined,
+    locked: isPlayerLocked(kickoff), injury: p.injury,
     ...risks,
     news: playerNews?.headline, newsTimestamp: playerNews?.published,
     recentGames: recentById.get(canonicalPlayerId(p.name, p.team)),
@@ -121,7 +125,7 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     const agg = aggregateProjections(projections);
     const game = scheduleByTeam.get(p.team.toUpperCase());
     const kickoff = p.kickoff ?? sports?.kickoff ?? game?.kickoff;
-    const player: RosterPlayer = { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: "FA", projection: agg?.median ?? p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, floor: agg?.floor, ceiling: agg?.ceiling, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue, weather: game?.weather, windMph: game?.windMph, overUnder: game?.overUnder, spread: game?.spread, divisional: game?.divisional, shortWeek: game?.shortWeek, locked: isPlayerLocked(kickoff), injury: p.injury ?? sports?.injury, recentGames: recentById.get(id), ...risksFor(p.team, game?.opponent) };
+    const player: RosterPlayer = { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: "FA", projection: agg?.median ?? p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, floor: agg?.floor, ceiling: agg?.ceiling, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue, weather: game?.weather, windMph: game?.windMph, overUnder: game?.overUnder, spread: game?.spread, divisional: game?.divisional, shortWeek: game?.shortWeek, crossCountryTravel: game?.crossCountryTravel, opponentPointsAllowedL3: game?.opponent ? defenseAllowed.get(`${game.opponent}|${p.position}`) : undefined, locked: isPlayerLocked(kickoff), injury: p.injury ?? sports?.injury, recentGames: recentById.get(id), ...risksFor(p.team, game?.opponent) };
     player.decisionProfile = buildDecisionProfile(player);
     player.projection = player.decisionProfile.median; player.floor = player.decisionProfile.floor; player.ceiling = player.decisionProfile.ceiling;
     return player;
@@ -137,7 +141,7 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     const agg = aggregateProjections(projections);
     const game = scheduleByTeam.get(p.team.toUpperCase());
     const kickoff = p.kickoff ?? sports?.kickoff ?? game?.kickoff;
-    const player: RosterPlayer = { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: p.slot, projection: agg?.median ?? p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, floor: agg?.floor, ceiling: agg?.ceiling, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue, weather: game?.weather, windMph: game?.windMph, overUnder: game?.overUnder, spread: game?.spread, divisional: game?.divisional, shortWeek: game?.shortWeek, locked: isPlayerLocked(kickoff), injury: p.injury ?? sports?.injury, recentGames: recentById.get(id), ...risksFor(p.team, game?.opponent) };
+    const player: RosterPlayer = { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: p.slot, projection: agg?.median ?? p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, floor: agg?.floor, ceiling: agg?.ceiling, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue, weather: game?.weather, windMph: game?.windMph, overUnder: game?.overUnder, spread: game?.spread, divisional: game?.divisional, shortWeek: game?.shortWeek, crossCountryTravel: game?.crossCountryTravel, opponentPointsAllowedL3: game?.opponent ? defenseAllowed.get(`${game.opponent}|${p.position}`) : undefined, locked: isPlayerLocked(kickoff), injury: p.injury ?? sports?.injury, recentGames: recentById.get(id), ...risksFor(p.team, game?.opponent) };
     player.decisionProfile = buildDecisionProfile(player);
     player.projection = player.decisionProfile.median; player.floor = player.decisionProfile.floor; player.ceiling = player.decisionProfile.ceiling;
     return player;

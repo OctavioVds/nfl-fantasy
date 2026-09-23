@@ -12,6 +12,7 @@ export interface EspnTeamContext {
   spread?: number;
   divisional?: boolean;
   shortWeek?: boolean;
+  crossCountryTravel?: boolean;
 }
 
 type EspnEvent = {
@@ -37,6 +38,12 @@ const DIVISIONS = [
   ["BUF", "MIA", "NE", "NYJ"], ["BAL", "CIN", "CLE", "PIT"], ["HOU", "IND", "JAX", "TEN"], ["DEN", "KC", "LV", "LAC"],
   ["DAL", "NYG", "PHI", "WAS"], ["CHI", "DET", "GB", "MIN"], ["ATL", "CAR", "NO", "TB"], ["ARI", "LAR", "SF", "SEA"],
 ];
+const TIME_ZONE_BAND: Record<string, number> = {
+  SEA: 0, SF: 0, LAR: 0, LAC: 0, LV: 0, ARI: 0,
+  DEN: 1, KC: 1, DAL: 1, HOU: 1, CHI: 1, MIN: 1, GB: 1, NO: 1, TEN: 1,
+  BUF: 2, MIA: 2, NE: 2, NYJ: 2, BAL: 2, CIN: 2, CLE: 2, PIT: 2, IND: 2, JAX: 2,
+  PHI: 2, NYG: 2, WAS: 2, DET: 2, ATL: 2, CAR: 2, TB: 2,
+};
 
 function normalizeTeam(team: string | undefined) {
   const value = (team ?? "").toUpperCase();
@@ -67,6 +74,7 @@ export function mapEspnTeamContexts(events: unknown[]): Map<string, EspnTeamCont
         spread: teamSpread(team, homeAway, odds),
         divisional: DIVISIONS.some((division) => division.includes(team) && division.includes(opponent)),
         shortWeek,
+        crossCountryTravel: homeAway === "away" && TIME_ZONE_BAND[team] != null && TIME_ZONE_BAND[opponent] != null && Math.abs(TIME_ZONE_BAND[team] - TIME_ZONE_BAND[opponent]) >= 2,
       });
     }
   }

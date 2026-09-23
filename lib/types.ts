@@ -83,6 +83,7 @@ export interface RosterPlayer {
   spread?: number;
   divisional?: boolean;
   shortWeek?: boolean;
+  crossCountryTravel?: boolean;
   offensiveLineAbsences?: number;
   opponentCoverageAbsences?: number;
   opponentFrontSevenAbsences?: number;

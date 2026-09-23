@@ -32,6 +32,7 @@ type SportsDataGameRow = SportsDataRow & Record<string, unknown> & {
   ReceivingTargets?: number;
   Receptions?: number;
   RushingAttempts?: number;
+  Opponent?: string;
 };
 
 export interface SportsDataRecentUsage {
@@ -40,6 +41,18 @@ export interface SportsDataRecentUsage {
   team: string;
   position: string;
   games: RecentGameUsage[];
+}
+
+export interface SportsDataDefenseAllowed {
+  team: string;
+  position: string;
+  pointsPerGame: number;
+  games: number;
+}
+
+export interface SportsDataRecentBundle {
+  players: SportsDataRecentUsage[];
+  defenseAllowed: SportsDataDefenseAllowed[];
 }
 
 export interface SportsDataInjury {
@@ -151,11 +164,11 @@ export function mapSportsDataRecentUsage(rows: SportsDataGameRow[]): SportsDataR
   return [...players.values()].map((player) => ({ ...player, games: player.games.sort((a, b) => b.week - a.week).slice(0, 3) }));
 }
 
-export async function fetchSportsDataIoRecentUsage(season: number, week: number): Promise<SportsDataRecentUsage[]> {
+export async function fetchSportsDataIoRecentUsage(season: number, week: number): Promise<SportsDataRecentBundle> {
   const key = process.env.SPORTSDATAIO_API_KEY;
   if (!key) throw new Error("SPORTSDATAIO_API_KEY no configurada");
   const completedWeeks = Array.from({ length: Math.min(3, Math.max(0, week - 1)) }, (_, index) => week - 1 - index);
-  if (!completedWeeks.length) return [];
+  if (!completedWeeks.length) return { players: [], defenseAllowed: [] };
   const responses = await Promise.all(completedWeeks.map(async (completedWeek) => {
     const url = `https://api.sportsdata.io/v3/nfl/stats/json/PlayerGameStatsByWeek/${season}REG/${completedWeek}`;
     const response = await retry(() => withTimeout(fetch(url, {
@@ -166,7 +179,27 @@ export async function fetchSportsDataIoRecentUsage(season: number, week: number)
     if (!response.ok) throw new Error(`SportsDataIO recent usage ${response.status}`);
     return response.json() as Promise<SportsDataGameRow[]>;
   }));
-  return mapSportsDataRecentUsage(responses.flat());
+  const rows = responses.flat();
+  return { players: mapSportsDataRecentUsage(rows), defenseAllowed: mapDefenseAllowed(rows) };
+}
+
+function mapDefenseAllowed(rows: SportsDataGameRow[]): SportsDataDefenseAllowed[] {
+  const weekly = new Map<string, number>();
+  for (const row of rows) {
+    if (!row.Opponent || !row.Position || row.Week == null || row.FantasyPointsPPR == null || !["QB", "RB", "WR", "TE", "K"].includes(row.Position)) continue;
+    const key = `${row.Opponent.toUpperCase()}|${row.Position}|${row.Week}`;
+    weekly.set(key, (weekly.get(key) ?? 0) + row.FantasyPointsPPR);
+  }
+  const groups = new Map<string, number[]>();
+  for (const [key, points] of weekly) {
+    const [team, position] = key.split("|");
+    const groupKey = `${team}|${position}`;
+    groups.set(groupKey, [...(groups.get(groupKey) ?? []), points]);
+  }
+  return [...groups].map(([key, points]) => {
+    const [team, position] = key.split("|");
+    return { team, position, pointsPerGame: Math.round(points.reduce((sum, value) => sum + value, 0) / points.length * 10) / 10, games: points.length };
+  });
 }
 
 function ratio(numerator?: number, denominator?: number) {
