@@ -43,6 +43,8 @@ export interface RosterPlayer {
   weather?: string;
   locked?: boolean;
   injury?: string;
+  news?: string;
+  newsTimestamp?: string;
 }
 
 export interface Recommendation {
@@ -82,6 +84,16 @@ export interface AgentRun {
   latencyMs: number;
   cacheHit: boolean;
   message?: string;
+  mode?: "external" | "calculation" | "snapshot" | "unavailable";
+  records?: number;
+}
+
+export interface PendingMove {
+  kind: "waiver" | "trade";
+  status: "pending" | "unknown";
+  add?: string;
+  drop?: string;
+  partner?: string;
 }
 
 export interface SyncSnapshot {
@@ -104,4 +116,5 @@ export interface SyncSnapshot {
   agents: AgentRun[];
   sources: SourceRef[];
   warnings: string[];
+  pendingMoves?: PendingMove[];
 }

@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/providers/espn", () => ({
   fetchEspnScoreboard: vi.fn().mockRejectedValue(new Error("offline")),
+  fetchEspnNews: vi.fn().mockResolvedValue([]),
   mapEspnTeamContexts: vi.fn().mockReturnValue(new Map()),
 }));
 vi.mock("@/lib/providers/sleeper", () => ({ fetchSleeperTrending: vi.fn().mockResolvedValue([]) }));
 vi.mock("@/lib/providers/sportsdataio", () => ({ fetchSportsDataIoProjections: vi.fn().mockResolvedValue([]) }));
+vi.mock("@/lib/providers/statshawk", () => ({ fetchStatsHawkContext: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/db", () => ({
   saveSnapshot: vi.fn().mockResolvedValue({ persisted: false }),
   saveExternalIngest: vi.fn().mockResolvedValue({ persisted: false }),

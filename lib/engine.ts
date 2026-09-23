@@ -24,6 +24,17 @@ export function aggregateProjections(projections: PlayerProjection[]) {
   return { median: round(median), floor: round(floor), ceiling: round(ceiling), sources: values.length };
 }
 
+export const LINEUP_SWAP_THRESHOLD = 2.5;
+
+export function lineupDecisionScore(player: RosterPlayer) {
+  const projection = player.projection ?? 0;
+  const opportunity = player.opportunityScore == null ? 0 : Math.max(-1, Math.min(1, (player.opportunityScore - 70) / 25));
+  const depth = player.depthOrder === 1 ? 0.6 : player.depthOrder === 2 ? 0.15 : player.depthOrder && player.depthOrder >= 3 ? -0.6 : 0;
+  const status = (player.injury ?? "").toUpperCase();
+  const injury = /^(IR|O|OUT|INACTIVE)$/.test(status) ? -100 : /^(D|DOUBTFUL)$/.test(status) ? -8 : /^(Q|QUESTIONABLE)$/.test(status) ? -2 : 0;
+  return projection + opportunity + depth + injury;
+}
+
 export function optimizeLineup(players: RosterPlayer[]) {
   const slots = ["QB", "RB", "RB", "WR", "WR", "TE", "RB/WR", "DST", "K"];
   const used = new Set<string>();
@@ -36,16 +47,38 @@ export function optimizeLineup(players: RosterPlayer[]) {
     used.add(locked.canonicalPlayerId);
     result.push({ ...locked, slot });
   }
+  // Preserve valid unlocked starters first. A projection model must clear a
+  // meaningful margin before asking the user to abandon known volume.
+  for (const slot of slots) {
+    const occupied = result.filter((p) => p.slot === slot).length;
+    const needed = slots.filter((candidate) => candidate === slot).length;
+    if (occupied >= needed) continue;
+    const incumbent = players.find((p) => !p.locked && p.slot === slot && p.slot !== "IR" && !used.has(p.canonicalPlayerId) && eligible(p, slot) && lineupDecisionScore(p) > -50);
+    if (!incumbent) continue;
+    used.add(incumbent.canonicalPlayerId);
+    result.push({ ...incumbent, slot });
+  }
   for (const slot of slots) {
     const occupied = result.filter((p) => p.slot === slot).length;
     const needed = slots.filter((candidate) => candidate === slot).length;
     if (occupied >= needed) continue;
     const candidate = players
-      .filter((p) => !p.locked && p.slot !== "IR" && !used.has(p.canonicalPlayerId) && eligible(p, slot))
-      .sort((a, b) => (b.projection ?? -1) - (a.projection ?? -1))[0];
+      .filter((p) => p.slot !== "IR" && !used.has(p.canonicalPlayerId) && eligible(p, slot))
+      .sort((a, b) => lineupDecisionScore(b) - lineupDecisionScore(a))[0];
     if (!candidate) continue;
     used.add(candidate.canonicalPlayerId);
     result.push({ ...candidate, slot });
+  }
+  for (let index = 0; index < result.length; index++) {
+    const incumbent = result[index];
+    if (incumbent.locked) continue;
+    const challenger = players
+      .filter((p) => p.slot !== "IR" && !used.has(p.canonicalPlayerId) && eligible(p, incumbent.slot))
+      .sort((a, b) => lineupDecisionScore(b) - lineupDecisionScore(a))[0];
+    if (!challenger || lineupDecisionScore(challenger) - lineupDecisionScore(incumbent) < LINEUP_SWAP_THRESHOLD) continue;
+    used.delete(incumbent.canonicalPlayerId);
+    used.add(challenger.canonicalPlayerId);
+    result[index] = { ...challenger, slot: incumbent.slot };
   }
   return result;
 }
@@ -69,6 +102,8 @@ export function topLineupRecommendations(players: RosterPlayer[]): Recommendatio
       .sort((a, b) => (a.projection ?? 99) - (b.projection ?? 99))[0];
     if (!replacement || (starter.projection ?? 0) <= (replacement.projection ?? 0)) continue;
     const delta = round((starter.projection ?? 0) - (replacement.projection ?? 0));
+    const safetyDelta = round(lineupDecisionScore(starter) - lineupDecisionScore(replacement));
+    if (safetyDelta < LINEUP_SWAP_THRESHOLD) continue;
     moves.push({
       id: `start-${starter.canonicalPlayerId}`,
       kind: "START",
@@ -80,8 +115,8 @@ export function topLineupRecommendations(players: RosterPlayer[]): Recommendatio
       risk: "Las proyecciones son estimaciones; noticias tardías pueden cambiar el papel.",
       why: [
         { type: "FACT", text: `${starter.name} está en tu banca y ${replacement.name} aparece actualmente como titular.` },
-        { type: "MODEL", text: `Ventaja mediana estimada: +${delta} puntos PPR.` },
-        { type: "INFERENCE", text: "El cambio mejora la proyección de esta semana sin cortar a ningún jugador." },
+        { type: "MODEL", text: `Ventaja mediana estimada: +${delta} puntos PPR; ventaja ajustada por seguridad: +${safetyDelta}.` },
+        { type: "INFERENCE", text: `El cambio supera el umbral conservador de ${LINEUP_SWAP_THRESHOLD} puntos después de considerar volumen, profundidad y lesión.` },
       ],
       actionable: true,
       priority: 1,

@@ -50,6 +50,13 @@ export const externalSyncSchema = z.object({
   })).optional(),
   opponentProjection: z.number().finite().nonnegative().optional(),
   freeAgents: z.array(externalPlayerSchema).default([]),
+  pendingMoves: z.array(z.object({
+    kind: z.enum(["waiver", "trade"]),
+    status: z.enum(["pending", "unknown"]),
+    add: z.string().min(1).optional(),
+    drop: z.string().min(1).optional(),
+    partner: z.string().min(1).optional(),
+  })).optional(),
   source: z.enum(["flaim", "espn", "manual", "chatgpt"]),
   sourceTimestamp: z.string().datetime(),
 });

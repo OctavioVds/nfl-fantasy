@@ -132,6 +132,7 @@ function ActionsView({ snapshot }: { snapshot: SyncSnapshot }) {
   return <section className="panel">
     <div className="panel-head"><h2>Action Center</h2><span>{snapshot.freshness === "STALE" ? "HISTÓRICO · NO ACCIONABLE" : "PLAN VALIDADO"}</span></div>
     <div className="decision-note">Ejecuta en este orden. Las reclamaciones alternativas con el mismo jugador a cortar deben colocarse debajo de la prioridad principal en ESPN.</div>
+    {!!snapshot.pendingMoves?.length && <div className="decision-note"><b>Movimientos pendientes en ESPN:</b> {snapshot.pendingMoves.map((move) => move.kind === "waiver" ? `tomar a ${move.add}${move.drop ? ` y soltar a ${move.drop}` : ""}` : "trade pendiente").join(" · ")}. No se recomiendan otra vez mientras sigan pendientes.</div>}
     <div className="action-groups">{groups.map((group) => {
       const items = snapshot.recommendations.filter((r) => group.kinds.includes(r.kind)).sort((a, b) => b.confidenceScore - a.confidenceScore || (a.priority ?? 99) - (b.priority ?? 99));
       return <div className="action-group" key={group.title}><h3>{group.title}</h3>{items.length ? <ExpandableActions items={items} initialCount={3} /> : <p>La plantilla actual no requiere una acción en esta categoría.</p>}</div>;
@@ -142,7 +143,8 @@ function ActionsView({ snapshot }: { snapshot: SyncSnapshot }) {
 function SystemView({ snapshot }: { snapshot: SyncSnapshot }) {
   return <section className="panel">
     <div className="panel-head"><h2>System Health</h2><span>{snapshot.health}</span></div>
-    <div className="agent-grid">{snapshot.agents.map((agent) => <div className="agent" key={agent.name}><div><i className={`state-${agent.status}`} /> <b>{agent.name}</b></div><span>{agent.status} · {agent.latencyMs} ms</span>{agent.message && <p>{agent.message}</p>}</div>)}</div>
+    <div className="decision-note">Los milisegundos miden ejecución, no calidad. “FUENTE EXTERNA” consultó una API; “CÁLCULO LOCAL” procesó los datos ya recibidos; “SNAPSHOT” reutilizó el último roster importado.</div>
+    <div className="agent-grid">{snapshot.agents.map((agent) => <div className="agent" key={agent.name}><div><i className={`state-${agent.status}`} /> <b>{agent.name}</b></div><span>{agent.mode === "external" ? "FUENTE EXTERNA" : agent.mode === "snapshot" ? "SNAPSHOT" : "CÁLCULO LOCAL"} · {agent.latencyMs} ms{agent.records != null ? ` · ${agent.records} registro(s)` : ""}</span>{agent.message && <p>{agent.message}</p>}</div>)}</div>
     <div className="source-list"><h3>Fuentes</h3>{snapshot.sources.length ? snapshot.sources.map((source) => <div key={`${source.name}-${source.sourceTimestamp}`}><b>{source.name}</b><span>{formatMonterrey(source.sourceTimestamp)}</span></div>) : <Empty message="No hay una fuente viva de liga conectada." />}</div>
   </section>;
 }
@@ -155,7 +157,7 @@ function PlayerRow({ player, historical }: { player: SyncSnapshot["roster"][numb
   const status = historical ? "HISTÓRICO" : player.locked ? "LOCKED" : "ABIERTO";
   const matchup = player.opponent ? `${player.homeAway === "away" ? "@" : "vs"} ${player.opponent}` : null;
   const conditions = [player.venue, player.weather].filter(Boolean).join(" · ");
-  return <div className="player-row"><span className="slot">{player.slot}</span><div><b>{player.name}</b><small>{player.team} · {player.position}{matchup ? ` · ${matchup}` : ""}{player.injury ? ` · ${player.injury}` : ""}</small>{conditions && <small className="conditions">{conditions}</small>}</div><strong>{player.projection?.toFixed(1) ?? "—"}</strong><span className={historical ? "historical" : player.locked ? "locked" : "open"}>{status}</span></div>;
+  return <div className="player-row"><span className="slot">{player.slot}</span><div><b>{player.name}</b><small>{player.team} · {player.position}{matchup ? ` · ${matchup}` : ""}{player.injury ? ` · ${player.injury}` : ""}</small>{conditions && <small className="conditions">{conditions}</small>}{player.news && <small className="conditions">Reporte: {player.news}</small>}</div><strong>{player.projection?.toFixed(1) ?? "—"}</strong><span className={historical ? "historical" : player.locked ? "locked" : "open"}>{status}</span></div>;
 }
 
 function ActionCard({ action, index }: { action: SyncSnapshot["recommendations"][number]; index: number }) {

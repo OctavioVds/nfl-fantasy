@@ -19,6 +19,13 @@ type EspnEvent = {
   }>;
 };
 
+export interface EspnNewsArticle {
+  headline: string;
+  description?: string;
+  published?: string;
+  athleteNames: string[];
+}
+
 const TEAM_ALIASES: Record<string, string> = { JAC: "JAX", WSH: "WAS", LA: "LAR" };
 
 function normalizeTeam(team: string | undefined) {
@@ -53,4 +60,17 @@ export async function fetchEspnScoreboard(season: number, week: number) {
   if (!response.ok) throw new Error(`ESPN schedule ${response.status}`);
   const body = await response.json();
   return Array.isArray(body.events) ? body.events : [];
+}
+
+export async function fetchEspnNews(limit = 100): Promise<EspnNewsArticle[]> {
+  const url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=${limit}`;
+  const response = await retry(() => withTimeout(fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" }), 8_000));
+  if (!response.ok) throw new Error(`ESPN news ${response.status}`);
+  const body = await response.json() as { articles?: Array<{ headline?: string; description?: string; published?: string; categories?: Array<{ type?: string; description?: string }> }> };
+  return (body.articles ?? []).flatMap((article) => article.headline ? [{
+    headline: article.headline,
+    description: article.description,
+    published: article.published,
+    athleteNames: (article.categories ?? []).filter((category) => category.type === "athlete" && category.description).map((category) => category.description!),
+  }] : []);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateProjections, canonicalPlayerId, optimizeLineup, pprPoints, rosterManagementRecommendations, simulateWin, tradeRecommendations, waiverRecommendations } from "@/lib/engine";
+import { aggregateProjections, canonicalPlayerId, optimizeLineup, pprPoints, rosterManagementRecommendations, simulateWin, topLineupRecommendations, tradeRecommendations, waiverRecommendations } from "@/lib/engine";
 import { isPlayerLocked, isStale, nflPeriod } from "@/lib/time";
 import type { PlayerProjection, RosterPlayer } from "@/lib/types";
 import { mapEspnTeamContexts } from "@/lib/providers/espn";
@@ -70,6 +70,19 @@ describe("lineup legality", () => {
     const result = optimizeLineup([p("q", "QB", 20), p("r1", "RB", 18), p("r2", "RB", 17), p("r3", "RB", 16), p("w1", "WR", 15), p("w2", "WR", 14), p("t", "TE", 10), p("d", "DST", 8), p("k", "K", 7)]);
     expect(result.find((x) => x.name === "q")?.slot).toBe("QB");
     expect(result.find((x) => x.name === "r3")?.slot).toBe("RB/WR");
+  });
+  it("keeps a healthy volume starter when a bench projection is only 2.1 points higher", () => {
+    const starter = { ...p("Volume RB", "RB", 12, "RB"), opportunityScore: 92, depthOrder: 1 };
+    const bench = { ...p("Volatile WR", "WR", 14.1), opportunityScore: 75, depthOrder: 2 };
+    const roster = [p("q", "QB", 20, "QB"), starter, p("r2", "RB", 17, "RB"), p("w1", "WR", 15, "WR"), p("w2", "WR", 14, "WR"), p("flex", "WR", 13, "RB/WR"), p("t", "TE", 10, "TE"), p("d", "DST", 8, "DST"), p("k", "K", 7, "K"), bench];
+    expect(topLineupRecommendations(roster).some((move) => move.target === "Volatile WR")).toBe(false);
+  });
+  it("moves an unavailable starter even without a large raw projection edge", () => {
+    const out = { ...p("Out RB", "RB", 14, "RB"), injury: "OUT" };
+    const replacement = p("Healthy RB", "RB", 12);
+    const result = optimizeLineup([p("q", "QB", 20, "QB"), out, p("r2", "RB", 17, "RB"), p("w1", "WR", 15, "WR"), p("w2", "WR", 14, "WR"), p("flex", "WR", 13, "RB/WR"), p("t", "TE", 10, "TE"), p("d", "DST", 8, "DST"), p("k", "K", 7, "K"), replacement]);
+    expect(result.some((player) => player.name === "Healthy RB")).toBe(true);
+    expect(result.some((player) => player.name === "Out RB")).toBe(false);
   });
   it("flags a valuable second quarterback for trade before a cut", () => {
     const actions = rosterManagementRecommendations([p("QB1", "QB", 22, "QB"), p("QB2", "QB", 20)]);

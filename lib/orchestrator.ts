@@ -3,7 +3,7 @@ import { captureServerEvent } from "./analytics";
 import { getLatestExternalIngest, saveExternalIngest, saveSnapshot } from "./db";
 import { aggregateProjections, canonicalPlayerId, optimizeLineup, rosterManagementRecommendations, simulateWin, topLineupRecommendations, tradeRecommendations, waiverRecommendations } from "./engine";
 import { fallbackSnapshot } from "./fallback-data";
-import { fetchEspnScoreboard, mapEspnTeamContexts } from "./providers/espn";
+import { fetchEspnNews, fetchEspnScoreboard, mapEspnTeamContexts } from "./providers/espn";
 import { fetchSleeperTrending } from "./providers/sleeper";
 import { fetchSportsDataIoProjections } from "./providers/sportsdataio";
 import { fetchStatsHawkContext } from "./providers/statshawk";
@@ -14,10 +14,15 @@ import type { AgentRun, RosterPlayer, SyncSnapshot, TradePartner } from "./types
 
 type AgentResult = { name: string; data: unknown; run: AgentRun };
 
-async function runAgent(name: string, fn: () => Promise<unknown>): Promise<AgentResult> {
+async function runAgent(name: string, fn: () => Promise<unknown>, mode: AgentRun["mode"] = "external"): Promise<AgentResult> {
   const started = Date.now();
-  try { return { name, data: await fn(), run: { name, status: "ok", latencyMs: Date.now() - started, cacheHit: false } }; }
-  catch (error) { return { name, data: null, run: { name, status: "failed", latencyMs: Date.now() - started, cacheHit: false, message: error instanceof Error ? error.message : "Provider error" } }; }
+  try {
+    const data = await fn();
+    const records = Array.isArray(data) ? data.length : data == null ? 0 : 1;
+    const emptyExternal = mode === "external" && records === 0;
+    return { name, data, run: { name, status: emptyExternal ? "degraded" : mode === "external" ? "ok" : "cached", latencyMs: Date.now() - started, cacheHit: mode !== "external", mode, records, message: emptyExternal ? "La fuente respondió sin registros." : mode === "external" ? `${records} registro(s) recibidos de la fuente.` : mode === "snapshot" ? "Snapshot persistido; no realizó una consulta externa." : "Cálculo local sobre los datos recibidos." } };
+  }
+  catch (error) { return { name, data: null, run: { name, status: "failed", latencyMs: Date.now() - started, cacheHit: false, mode, records: 0, message: error instanceof Error ? error.message : "Provider error" } }; }
 }
 
 export async function synchronize(external?: ExternalSyncPayload): Promise<SyncSnapshot> {
@@ -35,14 +40,12 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
   await captureServerEvent("sync_started", period);
 
   const firstWave = await Promise.all([
-    runAgent("LeagueIntelligence", async () => league ?? null),
+    runAgent("LeagueSnapshot", async () => league ?? null, "snapshot"),
     runAgent("Schedule", () => fetchEspnScoreboard(period.season, period.week)),
     runAgent("WaiverMarket", () => fetchSleeperTrending()),
-    runAgent("Injuries", async () => []),
-    runAgent("ProjectionEnsemble", async () => league?.roster ?? []),
     runAgent("SportsDataIO", () => fetchSportsDataIoProjections(period.season, period.week)),
     runAgent("StatsHawk", () => fetchStatsHawkContext(period.season)),
-    runAgent("BreakingNews", async () => []),
+    runAgent("BreakingNews", () => fetchEspnNews(100)),
   ]);
   if (!league) {
     const base = fallbackSnapshot();
@@ -58,15 +61,18 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
   }
 
   const scheduleEvents = (firstWave.find((r) => r.name === "Schedule")?.data ?? []) as unknown[];
+  const newsArticles = (firstWave.find((r) => r.name === "BreakingNews")?.data ?? []) as Awaited<ReturnType<typeof fetchEspnNews>>;
   const scheduleByTeam = mapEspnTeamContexts(scheduleEvents);
   const roster: RosterPlayer[] = league.roster.map((p) => {
     const game = scheduleByTeam.get(p.team.toUpperCase());
     const kickoff = p.kickoff ?? game?.kickoff;
+    const playerNews = newsArticles.find((article) => article.athleteNames.some((name) => canonicalPlayerId(name) === canonicalPlayerId(p.name)) && `${article.headline} ${article.description ?? ""}`.toLowerCase().includes(p.name.split(" ").at(-1)!.toLowerCase()));
     return ({
     canonicalPlayerId: canonicalPlayerId(p.name, p.team), name: p.name, team: p.team, position: p.position,
     slot: p.slot, projection: p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore,
     depthOrder: p.depthOrder, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue,
     weather: game?.weather, locked: isPlayerLocked(kickoff), injury: p.injury,
+    news: playerNews?.headline, newsTimestamp: playerNews?.published,
   }); });
   const sportsData = (firstWave.find((r) => r.name === "SportsDataIO")?.data ?? []) as Awaited<ReturnType<typeof fetchSportsDataIoProjections>>;
   const sportsById = new Map(sportsData.map((p) => [canonicalPlayerId(p.name, p.team), p]));
@@ -76,6 +82,7 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     const projections = [];
     if (p.projection != null) projections.push({ canonicalPlayerId: p.canonicalPlayerId, name: p.name, team: p.team, position: p.position, source: league.source, points: p.projection, sourceTimestamp: league.sourceTimestamp });
     const sports = p.position === "DST" ? sportsDefenseByTeam.get(p.team.toUpperCase()) : sportsById.get(p.canonicalPlayerId);
+    p.injury = mostSevereInjury(p.injury, sports?.injury, injuryFromNews(p.news));
     if (sports) projections.push({ canonicalPlayerId: p.canonicalPlayerId, name: p.name, team: p.team, position: p.position, source: "sportsdataio", points: sports.points, sourceTimestamp: started.toISOString() });
     if (projections.length) projectionGroups.set(p.canonicalPlayerId, aggregateProjections(projections));
   }
@@ -121,15 +128,11 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
   const computedOpponentScore = opponentRoster.length ? optimizeLineup(opponentRoster).reduce((sum, p) => sum + (p.projection ?? 0), 0) : null;
 
   const secondWave = await Promise.all([
-    runAgent("LineupOptimization", async () => topLineupRecommendations(roster)),
-    runAgent("WaiverRecommendations", async () => waiverRecommendations(roster, freeAgents)),
-    runAgent("OpponentScout", async () => computedOpponentScore ?? league.opponentProjection ?? null),
-    runAgent("TradeFinder", async () => tradeRecommendations(roster, tradePartners)),
-    runAgent("BreakoutDetection", async () => []),
-    runAgent("RestOfSeason", async () => []),
-    runAgent("DefenseStreaming", async () => []),
-    runAgent("KickerStreaming", async () => []),
-    runAgent("RosterManagement", async () => rosterManagementRecommendations(roster)),
+    runAgent("LineupOptimization", async () => topLineupRecommendations(roster), "calculation"),
+    runAgent("WaiverRecommendations", async () => waiverRecommendations(roster, freeAgents.filter((player) => !(league.pendingMoves ?? []).some((move) => move.kind === "waiver" && move.add === player.name))), "calculation"),
+    runAgent("OpponentScout", async () => computedOpponentScore ?? league.opponentProjection ?? null, "calculation"),
+    runAgent("TradeFinder", async () => tradeRecommendations(roster, tradePartners), "calculation"),
+    runAgent("RosterManagement", async () => rosterManagementRecommendations(roster), "calculation"),
   ]);
   const lineupActions = (secondWave.find((r) => r.name === "LineupOptimization")?.data ?? []) as ReturnType<typeof topLineupRecommendations>;
   const waiverActions = (secondWave.find((r) => r.name === "WaiverRecommendations")?.data ?? []) as ReturnType<typeof waiverRecommendations>;
@@ -161,10 +164,24 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
       })
       .map((r) => ({ ...r, actionable: !stale })),
     agents: [...firstWave, ...secondWave].map((r) => r.run),
-    sources: [{ name: league.source, sourceTimestamp: league.sourceTimestamp, fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" }, ...(scheduleEvents.length ? [{ name: "ESPN NFL Scoreboard", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...(sportsData.length ? [{ name: "SportsDataIO", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...((firstWave.find((r) => r.name === "StatsHawk")?.data) ? [{ name: "StatsHawk NFL", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : [])],
+    sources: [{ name: league.source, sourceTimestamp: league.sourceTimestamp, fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" }, ...(scheduleEvents.length ? [{ name: "ESPN NFL Scoreboard", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...(newsArticles.length ? [{ name: "ESPN NFL News", sourceTimestamp: newsArticles[0]?.published ?? started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...(sportsData.length ? [{ name: "SportsDataIO", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...((firstWave.find((r) => r.name === "StatsHawk")?.data) ? [{ name: "StatsHawk NFL", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : [])],
     warnings: [...(stale ? ["STALE DATA WARNING: la plantilla de liga supera 24 horas; vuelve a importar ESPN/Flaim."] : []), ...(failed.length ? [`DEGRADED DATA: ${failed.map((r) => r.name).join(", ")}.`] : [])],
+    pendingMoves: league.pendingMoves,
   };
   await saveSnapshot(snapshot);
   await captureServerEvent("sync_completed", { ...period, degraded: failed.length > 0, latency_ms: Date.now() - started.getTime() });
   return snapshot;
+}
+
+function injuryFromNews(headline?: string) {
+  if (!headline) return undefined;
+  if (/\b(out|inactive|injured reserve|ir)\b/i.test(headline)) return "OUT";
+  if (/\b(doubtful)\b/i.test(headline)) return "DOUBTFUL";
+  if (/\b(questionable|game[- ]time decision|uncertain|unsure)\b/i.test(headline)) return "QUESTIONABLE";
+  return undefined;
+}
+
+function mostSevereInjury(...statuses: Array<string | undefined>) {
+  const severity = (status?: string) => /^(IR|O|OUT|INACTIVE)$/i.test(status ?? "") ? 4 : /^(D|DOUBTFUL)$/i.test(status ?? "") ? 3 : /^(Q|QUESTIONABLE)$/i.test(status ?? "") ? 2 : /^(P|PROBABLE|ACTIVE)$/i.test(status ?? "") ? 1 : 0;
+  return statuses.filter(Boolean).sort((a, b) => severity(b) - severity(a))[0];
 }
