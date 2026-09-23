@@ -32,9 +32,10 @@ h1 span { color: var(--amber); }
 .nav-tabs { display: flex; gap: 5px; padding: 14px 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
 .nav-tabs button { color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 3px; padding: 8px 14px; cursor: pointer; font: 600 .82rem var(--font-display); text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
 .nav-tabs button.active { color: var(--bg); background: var(--text); border-color: var(--text); }
-.warning, .error { margin: 14px 0; border: 1px solid #7d5a21; border-left: 4px solid var(--amber); background: #2a2112; border-radius: 3px; padding: 12px 14px; font-size: .9rem; line-height: 1.5; }
+.warning, .error, .sync-notice { margin: 14px 0; border: 1px solid #7d5a21; border-left: 4px solid var(--amber); background: #2a2112; border-radius: 3px; padding: 12px 14px; font-size: .9rem; line-height: 1.5; }
 .warning strong { color: var(--amber); margin-right: 10px; text-transform: uppercase; font-family: var(--font-display); }
 .error { border-color: #77392f; border-left-color: var(--red); background: #281613; }
+.sync-notice { border-color: #315c45; border-left-color: var(--green); background: #10251a; color: #c6d2cc; }
 .score-strip { display: grid; grid-template-columns: repeat(5, 1fr); margin: 18px 0; border: 1px solid var(--line); background: var(--panel); }
 .metric { padding: 17px 18px; border-right: 1px solid var(--line); display: grid; gap: 2px; min-height: 112px; }
 .metric:last-child { border-right: 0; }

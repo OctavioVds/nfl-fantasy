@@ -72,13 +72,17 @@ export function topLineupRecommendations(players: RosterPlayer[]): Recommendatio
     moves.push({
       id: `start-${starter.canonicalPlayerId}`,
       kind: "START",
-      headline: `START ${starter.name} sobre ${replacement.name}`,
+      headline: `PON A ${starter.name} · SIENTA A ${replacement.name}`,
       target: starter.name,
       alternative: replacement.name,
       confidence: delta >= 3 ? "HIGH" : "MEDIUM",
-      confidenceScore: Math.min(9, Math.max(5, Math.round(5 + delta / 2))),
+      confidenceScore: Math.min(10, Math.max(5, Math.round(5 + delta / 2))),
       risk: "Las proyecciones son estimaciones; noticias tardías pueden cambiar el papel.",
-      why: [{ type: "MODEL", text: `Ventaja mediana estimada: +${delta} puntos PPR.` }],
+      why: [
+        { type: "FACT", text: `${starter.name} está en tu banca y ${replacement.name} aparece actualmente como titular.` },
+        { type: "MODEL", text: `Ventaja mediana estimada: +${delta} puntos PPR.` },
+        { type: "INFERENCE", text: "El cambio mejora la proyección de esta semana sin cortar a ningún jugador." },
+      ],
       actionable: true,
       priority: 1,
     });
@@ -154,7 +158,7 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
     const dropValue = playerValue(drop, roster);
     const net = round(candidateValue - dropValue);
     const dataSignals = [candidate.projection, candidate.futureProjection, candidate.opportunityScore, candidate.depthOrder].filter((v) => v != null).length;
-    const confidenceScore = Math.min(9, Math.max(4, Math.round(4 + Math.max(0, net) / 1.5 + dataSignals / 2)));
+    const confidenceScore = Math.min(10, Math.max(4, Math.round(4 + Math.max(0, net) / 1.5 + dataSignals / 2)));
     return { candidate, drop, net, candidateValue, confidenceScore };
   }).filter((row) => row.net >= 1).sort((a, b) => Math.round(b.net) - Math.round(a.net)
     || (b.candidate.opportunityScore ?? 0) - (a.candidate.opportunityScore ?? 0)
@@ -172,7 +176,7 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
   return selected.map(({ candidate, drop, net, confidenceScore }, index) => ({
       id: `add-${candidate.canonicalPlayerId}-drop-${drop.canonicalPlayerId}`,
       kind: "ADD" as const,
-      headline: `ADD ${candidate.name} · DROP ${drop.name}`,
+      headline: `TOMA A ${candidate.name} · TIRA A ${drop.name}`,
       target: candidate.name,
       alternative: drop.name,
       confidence: confidenceScore >= 8 ? "HIGH" as const : confidenceScore >= 6 ? "MEDIUM" as const : "LOW" as const,
@@ -180,6 +184,7 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
       risk: "La disponibilidad y el papel pueden cambiar antes de procesar waivers; confirma noticias cercanas al cierre.",
       why: [
         { type: "FACT" as const, text: `${candidate.name} fue confirmado disponible por la fuente de la liga.` },
+        { type: "FACT" as const, text: `${drop.name} está en tu roster, no está bloqueado y fue validado como opción de corte.` },
         { type: "MODEL" as const, text: `Ganancia de valor estimada sobre ${drop.name}: +${net}.` },
         ...(candidate.opportunityScore != null ? [{ type: "INFERENCE" as const, text: `Opportunity score normalizado: ${candidate.opportunityScore}/100.` }] : []),
       ],
@@ -214,31 +219,36 @@ export function tradeRecommendations(roster: RosterPlayer[], partners: TradePart
 
   const used = new Set<string>();
   return candidates
-    .sort((a, b) => b.fit - a.fit || b.gap - a.gap)
+    .sort((a, b) => Math.abs(a.gap) - Math.abs(b.gap) || b.fit - a.fit || b.gap - a.gap)
     .filter(({ give, receive, partner }) => {
       const key = `${give.canonicalPlayerId}|${receive.canonicalPlayerId}|${partner.teamId}`;
       if (used.has(key)) return false;
       used.add(key); return true;
     })
     .slice(0, 10)
-    .map(({ give, receive, partner, gap }, index) => ({
-      id: `trade-${give.canonicalPlayerId}-for-${receive.canonicalPlayerId}-${partner.teamId}`,
-      kind: "TRADE" as const,
-      headline: `OFRECER ${give.name} a ${partner.name} por ${receive.name}`,
-      target: receive.name,
-      alternative: give.name,
-      partner: partner.name,
-      confidence: Math.abs(gap) <= 2 ? "MEDIUM" as const : "LOW" as const,
-      confidenceScore: Math.abs(gap) <= 2 ? 7 : 5,
-      risk: "Es una propuesta de valor estimado; el rival puede rechazarla o pedir un paquete distinto.",
-      why: [
-        { type: "FACT" as const, text: `${receive.name} figura actualmente en el roster de ${partner.name}.` },
-        { type: "MODEL" as const, text: `Valores proyectados comparables; diferencia estimada para tu roster: ${gap >= 0 ? "+" : ""}${round(gap)}.` },
-        { type: "INFERENCE" as const, text: `La operación convierte profundidad de banca en ayuda de ${receive.position}.` },
-      ],
-      actionable: true,
-      priority: 4.2 + index / 100,
-    }));
+    .map(({ give, receive, partner, gap, fit }, index) => {
+      const difference = Math.abs(gap);
+      const equityScore = difference <= 0.75 ? 9 : difference <= 1.5 ? 8 : difference <= 2.5 ? 7 : difference <= 3.5 ? 6 : difference <= 5 ? 5 : 4;
+      const valueScore = Math.max(1, Math.min(10, equityScore + (fit >= 4 ? 1 : fit <= 1 ? -1 : 0)));
+      return {
+        id: `trade-${give.canonicalPlayerId}-for-${receive.canonicalPlayerId}-${partner.teamId}`,
+        kind: "TRADE" as const,
+        headline: `OFRECE ${give.name} A ${partner.name} POR ${receive.name}`,
+        target: receive.name,
+        alternative: give.name,
+        partner: partner.name,
+        confidence: valueScore >= 9 ? "HIGH" as const : valueScore >= 7 ? "MEDIUM" as const : "LOW" as const,
+        confidenceScore: valueScore,
+        risk: "Es una propuesta de valor estimado; el rival puede rechazarla o pedir un paquete distinto.",
+        why: [
+          { type: "FACT" as const, text: `${receive.name} figura actualmente en el roster de ${partner.name}.` },
+          { type: "MODEL" as const, text: `Valores proyectados comparables; diferencia estimada para tu roster: ${gap >= 0 ? "+" : ""}${round(gap)}.` },
+          { type: "INFERENCE" as const, text: `La operación convierte profundidad de banca en ayuda de ${receive.position}.` },
+        ],
+        actionable: true,
+        priority: 4.2 + index / 100,
+      };
+    });
 }
 
 const round = (value: number) => Math.round(value * 10) / 10;

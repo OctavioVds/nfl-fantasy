@@ -12,18 +12,22 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
   const [view, setView] = useState<View>("command");
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
   const starters = useMemo(() => snapshot.scoreMode === "actual" ? snapshot.roster.filter((p) => !["Bench", "IR"].includes(p.slot)) : optimizeLineup(snapshot.roster), [snapshot.roster, snapshot.scoreMode]);
   const starterIds = useMemo(() => new Set(starters.map((p) => p.canonicalPlayerId)), [starters]);
   const bench = useMemo(() => snapshot.roster.filter((p) => p.slot !== "IR" && !starterIds.has(p.canonicalPlayerId)).map((p) => ({ ...p, slot: "Bench" })), [snapshot.roster, starterIds]);
 
   async function sync() {
-    setSyncing(true); setError(null);
+    setSyncing(true); setError(null); setSyncNotice(null);
     try {
       const response = await fetch("/api/sync", { method: "POST" });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "No se pudo sincronizar");
       setSnapshot(body);
+      setSyncNotice(body.dataAsOf === snapshot.dataAsOf
+        ? "Análisis recalculado. ESPN/Flaim no entregó cambios nuevos en el roster."
+        : "Roster, waivers y análisis actualizados con una fuente de liga nueva.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "No se pudo sincronizar"); }
     finally { setSyncing(false); }
   }
@@ -39,7 +43,7 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
           <div className={`health health-${snapshot.health.toLowerCase()}`}><i />{snapshot.health}</div>
           <button className="sync-button" onClick={sync} disabled={syncing}>
             <span className={syncing ? "spinner active" : "spinner"} />
-            {syncing ? "Sincronizando" : "Sincronizar"}
+            {syncing ? "Actualizando" : "Actualizar"}
           </button>
         </div>
       </header>
@@ -59,6 +63,7 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
         </section>
       )}
       {error && <section className="error" role="alert">{error}</section>}
+      {syncNotice && <section className="sync-notice" role="status">{syncNotice}</section>}
 
       {view === "command" && <CommandView snapshot={snapshot} />}
       {view === "lineup" && <LineupView starters={starters} bench={bench} historical={snapshot.freshness === "STALE"} />}
@@ -67,8 +72,8 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
 
       <footer>
         <span>Temporada {snapshot.season} · Semana {snapshot.week}</span>
-        <span>Datos: {formatMonterrey(snapshot.dataAsOf)}</span>
-        <span>Sync: {formatMonterrey(snapshot.generatedAt)}</span>
+        <span>Datos ESPN/Flaim: {formatMonterrey(snapshot.dataAsOf)}</span>
+        <span>Análisis recalculado: {formatMonterrey(snapshot.generatedAt)}</span>
       </footer>
     </main>
   );
@@ -76,8 +81,10 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
 
 function CommandView({ snapshot }: { snapshot: SyncSnapshot }) {
   const bestWaiver = snapshot.recommendations.find((item) => item.kind === "ADD");
-  const urgent = snapshot.recommendations.filter((item) => ["START", "WATCH"].includes(item.kind));
-  const topActions = [...urgent, ...snapshot.recommendations.filter((item) => !urgent.includes(item))];
+  const topActions = [...snapshot.recommendations].sort((a, b) => {
+    const category = (kind: string) => ["ADD", "DROP", "STREAM"].includes(kind) ? 1 : ["START", "SIT"].includes(kind) ? 2 : kind === "TRADE" ? 3 : 4;
+    return category(a.kind) - category(b.kind) || b.confidenceScore - a.confidenceScore || (a.priority ?? 99) - (b.priority ?? 99);
+  });
   const record = snapshot.teamRecord;
   const recordValue = record ? `${record.wins}-${record.losses}${record.ties ? `-${record.ties}` : ""}` : "—";
   const recordUnit = record ? `${record.streak ?? "SIN RACHA"}${record.rank ? ` · #${record.rank}` : ""}` : "SIN DATOS";
@@ -117,8 +124,8 @@ function LineupView({ starters, bench, historical }: { starters: SyncSnapshot["r
 
 function ActionsView({ snapshot }: { snapshot: SyncSnapshot }) {
   const groups = [
-    { title: "Cambios de alineación", kinds: ["START", "SIT"] },
     { title: "Waivers en orden", kinds: ["ADD", "DROP", "STREAM"] },
+    { title: "Cambios de alineación", kinds: ["START", "SIT"] },
     { title: "Trades recomendados", kinds: ["TRADE"] },
     { title: "Manejo del roster", kinds: ["HOLD", "WATCH"] },
   ];
@@ -126,7 +133,7 @@ function ActionsView({ snapshot }: { snapshot: SyncSnapshot }) {
     <div className="panel-head"><h2>Action Center</h2><span>{snapshot.freshness === "STALE" ? "HISTÓRICO · NO ACCIONABLE" : "PLAN VALIDADO"}</span></div>
     <div className="decision-note">Ejecuta en este orden. Las reclamaciones alternativas con el mismo jugador a cortar deben colocarse debajo de la prioridad principal en ESPN.</div>
     <div className="action-groups">{groups.map((group) => {
-      const items = snapshot.recommendations.filter((r) => group.kinds.includes(r.kind));
+      const items = snapshot.recommendations.filter((r) => group.kinds.includes(r.kind)).sort((a, b) => b.confidenceScore - a.confidenceScore || (a.priority ?? 99) - (b.priority ?? 99));
       return <div className="action-group" key={group.title}><h3>{group.title}</h3>{items.length ? <ExpandableActions items={items} initialCount={3} /> : <p>La plantilla actual no requiere una acción en esta categoría.</p>}</div>;
     })}</div>
   </section>;
@@ -153,7 +160,7 @@ function PlayerRow({ player, historical }: { player: SyncSnapshot["roster"][numb
 
 function ActionCard({ action, index }: { action: SyncSnapshot["recommendations"][number]; index: number }) {
   return <article className={`action-card ${!action.actionable ? "disabled" : ""}`}>
-    <div className="action-index">0{index + 1}</div><div className="action-copy"><span>{action.actionable ? action.kind : `${action.kind} · NO ACCIONABLE`}</span><h3>{action.headline}</h3><div className="evidence">{action.why.map((reason, i) => <p key={i}><b>{reason.type}</b> {reason.text}</p>)}</div><small>Riesgo: {action.risk}</small></div><div className="confidence"><strong>{action.confidenceScore}/10</strong><span>{action.confidence}</span></div>
+    <div className="action-index">0{index + 1}</div><div className="action-copy"><span>{action.actionable ? action.kind : `${action.kind} · NO ACCIONABLE`}</span><h3>{action.headline}</h3><div className="evidence">{action.why.map((reason, i) => <p key={i}><b>{reason.type}</b> {reason.text}</p>)}</div><small>Riesgo: {action.risk}</small></div><div className="confidence"><strong>{action.confidenceScore}/10</strong><span>VALOR</span></div>
   </article>;
 }
 

@@ -154,8 +154,11 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     teamRecord: league.teamRecord,
     opponentName: activeOpponent?.name,
     roster,
-    recommendations: [...lineupActions, ...waiverActions, ...tradeActions, ...rosterActions]
-      .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99) || b.confidenceScore - a.confidenceScore)
+    recommendations: [...waiverActions, ...lineupActions, ...tradeActions, ...rosterActions]
+      .sort((a, b) => {
+        const category = (kind: string) => ["ADD", "DROP", "STREAM"].includes(kind) ? 1 : ["START", "SIT"].includes(kind) ? 2 : kind === "TRADE" ? 3 : 4;
+        return category(a.kind) - category(b.kind) || b.confidenceScore - a.confidenceScore || (a.priority ?? 99) - (b.priority ?? 99);
+      })
       .map((r) => ({ ...r, actionable: !stale })),
     agents: [...firstWave, ...secondWave].map((r) => r.run),
     sources: [{ name: league.source, sourceTimestamp: league.sourceTimestamp, fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" }, ...(scheduleEvents.length ? [{ name: "ESPN NFL Scoreboard", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...(sportsData.length ? [{ name: "SportsDataIO", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : []), ...((firstWave.find((r) => r.name === "StatsHawk")?.data) ? [{ name: "StatsHawk NFL", sourceTimestamp: started.toISOString(), fetchedAt: started.toISOString(), season: period.season, week: period.week, gameStatus: "unknown" as const }] : [])],
