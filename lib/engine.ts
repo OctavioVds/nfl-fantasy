@@ -138,7 +138,8 @@ export function playerValue(player: RosterPlayer, roster: RosterPlayer[]) {
 }
 
 export function waiverRecommendations(roster: RosterPlayer[], freeAgents: RosterPlayer[]): Recommendation[] {
-  const dropPool = roster.filter((p) => p.slot === "Bench" && !p.locked);
+  // High-opportunity bench players are trade assets or holds, not waiver cuts.
+  const dropPool = roster.filter((p) => p.slot === "Bench" && !p.locked && (p.opportunityScore ?? 0) < 80);
   if (!dropPool.length || !freeAgents.length) return [];
   const quarterbackCount = roster.filter((p) => p.position === "QB" && p.slot !== "IR").length;
 

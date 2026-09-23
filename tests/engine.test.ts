@@ -21,6 +21,10 @@ describe("waiver decisions", () => {
     expect(moves[0]).toMatchObject({ kind: "ADD", target: "Add", alternative: "Drop", actionable: true });
   });
   it("does not recommend a worse free agent", () => expect(waiverRecommendations([p("Hold", "WR", 12)], [p("Worse", "WR", 5, "FA")])).toEqual([]));
+  it("does not cut a high-opportunity bench player", () => {
+    const hold = { ...p("Valuable hold", "WR", 8), opportunityScore: 85 };
+    expect(waiverRecommendations([hold], [p("Small upgrade", "WR", 10, "FA")])).toEqual([]);
+  });
   it("never drops a starter", () => {
     const moves = waiverRecommendations([p("Starter", "WR", 1, "WR"), p("Bench", "RB", 5)], [p("Upgrade", "WR", 20, "FA")]);
     expect(moves[0]?.alternative).toBe("Bench");
