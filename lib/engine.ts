@@ -156,8 +156,9 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
     const dataSignals = [candidate.projection, candidate.futureProjection, candidate.opportunityScore, candidate.depthOrder].filter((v) => v != null).length;
     const confidenceScore = Math.min(9, Math.max(4, Math.round(4 + Math.max(0, net) / 1.5 + dataSignals / 2)));
     return { candidate, drop, net, candidateValue, confidenceScore };
-  }).filter((row) => row.net >= 1).sort((a, b) => b.net - a.net
+  }).filter((row) => row.net >= 1).sort((a, b) => Math.round(b.net) - Math.round(a.net)
     || (b.candidate.opportunityScore ?? 0) - (a.candidate.opportunityScore ?? 0)
+    || b.net - a.net
     || (b.candidate.futureProjection ?? 0) - (a.candidate.futureProjection ?? 0));
   const selected = [] as typeof ranked;
   for (const row of ranked) {
