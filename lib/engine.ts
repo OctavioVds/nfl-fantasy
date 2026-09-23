@@ -24,7 +24,7 @@ export function aggregateProjections(projections: PlayerProjection[]) {
   return { median: round(median), floor: round(floor), ceiling: round(ceiling), sources: values.length };
 }
 
-export const LINEUP_SWAP_THRESHOLD = 2.5;
+export const LINEUP_SWAP_THRESHOLD = 3;
 
 export function lineupDecisionScore(player: RosterPlayer) {
   const projection = player.projection ?? 0;
@@ -37,50 +37,29 @@ export function lineupDecisionScore(player: RosterPlayer) {
 
 export function optimizeLineup(players: RosterPlayer[]) {
   const slots = ["QB", "RB", "RB", "WR", "WR", "TE", "RB/WR", "DST", "K"];
-  const used = new Set<string>();
-  const result: RosterPlayer[] = [];
   const eligible = (player: RosterPlayer, slot: string) => player.position === slot || (slot === "RB/WR" && ["RB", "WR"].includes(player.position));
+  const currentStarters = new Set(players.filter((p) => !["Bench", "IR"].includes(p.slot)).map((p) => p.canonicalPlayerId));
+  let best: RosterPlayer[] = [];
+  let bestScore = Number.NEGATIVE_INFINITY;
 
-  for (const slot of slots) {
-    const locked = players.find((p) => p.locked && p.slot === slot && !used.has(p.canonicalPlayerId));
-    if (!locked) continue;
-    used.add(locked.canonicalPlayerId);
-    result.push({ ...locked, slot });
-  }
-  // Preserve valid unlocked starters first. A projection model must clear a
-  // meaningful margin before asking the user to abandon known volume.
-  for (const slot of slots) {
-    const occupied = result.filter((p) => p.slot === slot).length;
-    const needed = slots.filter((candidate) => candidate === slot).length;
-    if (occupied >= needed) continue;
-    const incumbent = players.find((p) => !p.locked && p.slot === slot && p.slot !== "IR" && !used.has(p.canonicalPlayerId) && eligible(p, slot) && lineupDecisionScore(p) > -50);
-    if (!incumbent) continue;
-    used.add(incumbent.canonicalPlayerId);
-    result.push({ ...incumbent, slot });
-  }
-  for (const slot of slots) {
-    const occupied = result.filter((p) => p.slot === slot).length;
-    const needed = slots.filter((candidate) => candidate === slot).length;
-    if (occupied >= needed) continue;
-    const candidate = players
-      .filter((p) => p.slot !== "IR" && !used.has(p.canonicalPlayerId) && eligible(p, slot))
-      .sort((a, b) => lineupDecisionScore(b) - lineupDecisionScore(a))[0];
-    if (!candidate) continue;
-    used.add(candidate.canonicalPlayerId);
-    result.push({ ...candidate, slot });
-  }
-  for (let index = 0; index < result.length; index++) {
-    const incumbent = result[index];
-    if (incumbent.locked) continue;
-    const challenger = players
-      .filter((p) => p.slot !== "IR" && !used.has(p.canonicalPlayerId) && eligible(p, incumbent.slot))
-      .sort((a, b) => lineupDecisionScore(b) - lineupDecisionScore(a))[0];
-    if (!challenger || lineupDecisionScore(challenger) - lineupDecisionScore(incumbent) < LINEUP_SWAP_THRESHOLD) continue;
-    used.delete(incumbent.canonicalPlayerId);
-    used.add(challenger.canonicalPlayerId);
-    result[index] = { ...challenger, slot: incumbent.slot };
-  }
-  return result;
+  const search = (slotIndex: number, used: Set<string>, lineup: RosterPlayer[], score: number) => {
+    if (slotIndex === slots.length) {
+      if (score > bestScore) { bestScore = score; best = lineup; }
+      return;
+    }
+    const slot = slots[slotIndex];
+    const locked = players.filter((p) => p.locked && p.slot === slot && !used.has(p.canonicalPlayerId));
+    const candidates = (locked.length ? locked : players.filter((p) => p.slot !== "IR" && !used.has(p.canonicalPlayerId) && eligible(p, slot) && (!p.locked || p.slot === slot)))
+      .sort((a, b) => lineupDecisionScore(b) - lineupDecisionScore(a));
+    for (const candidate of candidates) {
+      used.add(candidate.canonicalPlayerId);
+      const incumbentBonus = currentStarters.has(candidate.canonicalPlayerId) ? LINEUP_SWAP_THRESHOLD : 0;
+      search(slotIndex + 1, used, [...lineup, { ...candidate, slot }], score + lineupDecisionScore(candidate) + incumbentBonus);
+      used.delete(candidate.canonicalPlayerId);
+    }
+  };
+  search(0, new Set(), [], 0);
+  return best;
 }
 
 export function simulateWin(myMedian: number, oppMedian: number, iterations = 5000, seed = 42) {

@@ -84,6 +84,17 @@ describe("lineup legality", () => {
     expect(result.some((player) => player.name === "Healthy RB")).toBe(true);
     expect(result.some((player) => player.name === "Out RB")).toBe(false);
   });
+  it("optimizes the complete RB/WR/FLEX combination instead of replacing the first eligible slot", () => {
+    const roster = [
+      p("q", "QB", 20, "QB"), p("Henry", "RB", 18, "RB"), p("Etienne", "RB", 11.3, "RB"),
+      p("Amon", "WR", 20, "WR"), p("Olave", "WR", 17, "WR"), p("Davante", "WR", 13.4, "RB/WR"),
+      p("Chuba", "RB", 14), p("t", "TE", 10, "TE"), p("d", "DST", 8, "DST"), p("k", "K", 7, "K"),
+    ];
+    const result = optimizeLineup(roster);
+    expect(result.some((player) => player.name === "Etienne")).toBe(true);
+    expect(result.some((player) => player.name === "Davante")).toBe(true);
+    expect(result.some((player) => player.name === "Chuba")).toBe(false);
+  });
   it("flags a valuable second quarterback for trade before a cut", () => {
     const actions = rosterManagementRecommendations([p("QB1", "QB", 22, "QB"), p("QB2", "QB", 20)]);
     expect(actions[0]).toMatchObject({ kind: "TRADE", target: "QB2", confidence: "HIGH" });
