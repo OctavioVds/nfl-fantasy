@@ -38,8 +38,6 @@ export interface MatchupLineupOptions {
   strategy?: LineupStrategy;
   signalsByPlayer?: Record<string, unknown>;
   now?: Date;
-  iterations?: number;
-  seed?: number;
 }
 
 export interface MatchupLineupResult {
