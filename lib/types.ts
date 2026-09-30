@@ -1,12 +1,12 @@
 export type Confidence = "HIGH" | "MEDIUM" | "LOW";
-export type AgentStatus = "ok" | "degraded" | "failed" | "cached";
+export type AgentStatus = "ok" | "degraded" | "failed" | "missing_credentials" | "cached";
 export type ActionKind = "START" | "SIT" | "ADD" | "DROP" | "HOLD" | "TRADE" | "WATCH" | "STREAM";
 
 export interface SourceRef {
   name: string;
   url?: string;
-  sourceTimestamp: string;
-  fetchedAt: string;
+  sourceTimestamp?: string;
+  fetchedAt?: string;
   season: number;
   week: number;
   gameStatus: "pre" | "in" | "post" | "unknown";
@@ -21,7 +21,7 @@ export interface PlayerProjection {
   points: number;
   floor?: number;
   ceiling?: number;
-  sourceTimestamp: string;
+  sourceTimestamp?: string;
 }
 
 export interface RecentGameUsage {
@@ -133,6 +133,7 @@ export interface AgentRun {
   status: AgentStatus;
   latencyMs: number;
   cacheHit: boolean;
+  fetchedAt?: string;
   message?: string;
   mode?: "external" | "calculation" | "snapshot" | "unavailable";
   records?: number;
@@ -146,13 +147,28 @@ export interface PendingMove {
   partner?: string;
 }
 
+export interface RosterChange {
+  providerId: string;
+  playerName: string;
+  kind: "ADDED" | "DROPPED" | "MOVED_TO_BENCH" | "MOVED_TO_STARTER" | "MOVED_TO_IR" | "ACTIVATED_FROM_IR";
+  fromSlot?: string;
+  toSlot?: string;
+}
+
 export interface SyncSnapshot {
   id: string;
   season: number;
   week: number;
   leagueName: string;
   generatedAt: string;
-  dataAsOf: string;
+  dataAsOf?: string;
+  dataUpdatedAt?: string;
+  dataFetchedAt?: string;
+  dataReceivedAt?: string;
+  dataVersion?: string;
+  syncRunId?: string;
+  teamCount?: number;
+  scoringLabel?: string;
   freshness: "FRESH" | "STALE" | "DEGRADED";
   health: "HEALTHY" | "DEGRADED" | "ERROR";
   projectedScore: number | null;
@@ -167,4 +183,5 @@ export interface SyncSnapshot {
   sources: SourceRef[];
   warnings: string[];
   pendingMoves?: PendingMove[];
+  rosterChanges?: RosterChange[];
 }

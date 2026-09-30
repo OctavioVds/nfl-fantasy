@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { aggregateProjections, buildDecisionProfile, canonicalPlayerId, optimizeLineup, pprPoints, rosterManagementRecommendations, simulateWin, topLineupRecommendations, tradeRecommendations, waiverRecommendations } from "@/lib/engine";
+import { aggregateProjections, buildDecisionProfile, optimizeLineup, pprPoints, rosterManagementRecommendations, simulateWin, topLineupRecommendations, tradeRecommendations, waiverRecommendations } from "@/lib/engine";
 import { isPlayerLocked, isStale, nflPeriod } from "@/lib/time";
+import { providerPlayerId } from "@/lib/player-identity";
 import type { PlayerProjection, RosterPlayer } from "@/lib/types";
 import { mapEspnTeamContexts } from "@/lib/providers/espn";
 import { mapSportsDataRecentUsage } from "@/lib/providers/sportsdataio";
@@ -16,7 +17,7 @@ describe("scoring and projections", () => {
 });
 
 describe("waiver decisions", () => {
-  const p = (name: string, position: RosterPlayer["position"], projection: number, slot = "Bench", futureProjection = projection): RosterPlayer => ({ canonicalPlayerId: canonicalPlayerId(name), name, team: "X", position, projection, futureProjection, slot });
+  const p = (name: string, position: RosterPlayer["position"], projection: number, slot = "Bench", futureProjection = projection): RosterPlayer => ({ canonicalPlayerId: `test:${name}`, name, team: "X", position, projection, futureProjection, slot });
   it("only recommends confirmed available players with positive net value", () => {
     const moves = waiverRecommendations([p("Drop", "WR", 7), p("Hold", "RB", 14)], [p("Add", "WR", 13, "FA", 14)]);
     expect(moves[0]).toMatchObject({ kind: "ADD", target: "Add", alternative: "Drop", actionable: true });
@@ -56,7 +57,7 @@ describe("waiver decisions", () => {
 });
 
 describe("lineup legality", () => {
-  const p = (name: string, position: RosterPlayer["position"], projection: number, slot = "Bench"): RosterPlayer => ({ canonicalPlayerId: canonicalPlayerId(name), name, team: "X", position, projection, slot });
+  const p = (name: string, position: RosterPlayer["position"], projection: number, slot = "Bench"): RosterPlayer => ({ canonicalPlayerId: `test:${name}`, name, team: "X", position, projection, slot });
   it("fills QB, two RB, two WR, TE, FLEX, DST and K", () => {
     const roster = [p("q", "QB", 20), p("r1", "RB", 18), p("r2", "RB", 17), p("r3", "RB", 16), p("w1", "WR", 15), p("w2", "WR", 14), p("t", "TE", 10), p("d", "DST", 8), p("k", "K", 7)];
     const result = optimizeLineup(roster);
@@ -66,6 +67,12 @@ describe("lineup legality", () => {
   it("does not displace locked starters", () => {
     const locked = { ...p("locked", "WR", 1, "WR"), locked: true };
     expect(optimizeLineup([locked, p("better", "WR", 20), p("w2", "WR", 19), p("q", "QB", 1), p("r1", "RB", 1), p("r2", "RB", 1), p("t", "TE", 1), p("d", "DST", 1), p("k", "K", 1)]).some((x) => x.name === "locked")).toBe(true);
+  });
+  it("does not recommend locked or rostered players as waiver additions", () => {
+    const roster = [p("own", "RB", 4, "Bench")];
+    const occupied = { ...p("occupied", "RB", 20, "FA"), canonicalPlayerId: roster[0]!.canonicalPlayerId };
+    const locked = { ...p("locked-free-agent", "WR", 20, "FA"), locked: true };
+    expect(waiverRecommendations(roster, [occupied, locked])).toEqual([]);
   });
   it("returns the recommended slot instead of the player's old bench slot", () => {
     const result = optimizeLineup([p("q", "QB", 20), p("r1", "RB", 18), p("r2", "RB", 17), p("r3", "RB", 16), p("w1", "WR", 15), p("w2", "WR", 14), p("t", "TE", 10), p("d", "DST", 8), p("k", "K", 7)]);
@@ -111,9 +118,18 @@ describe("lineup legality", () => {
 describe("time, identity and freshness", () => {
   it("detects 2026 week 2 before Monday night finishes", () => expect(nflPeriod(new Date("2026-09-20T18:00:00Z"))).toEqual({ season: 2026, week: 2 }));
   it("rolls fantasy recommendations to week 3 on Tuesday", () => expect(nflPeriod(new Date("2026-09-22T14:00:00Z"))).toEqual({ season: 2026, week: 3 }));
+  it("keeps Monday night in the prior matchup week until Tuesday morning in Monterrey", () => {
+    expect(nflPeriod(new Date("2026-09-22T11:59:00Z"))).toEqual({ season: 2026, week: 2 });
+    expect(nflPeriod(new Date("2026-09-22T12:00:00Z"))).toEqual({ season: 2026, week: 3 });
+  });
+  it("derives the season across the year boundary", () => expect(nflPeriod(new Date("2027-01-20T18:00:00Z")).season).toBe(2026));
   it("uses the real instant across timezones for locks", () => expect(isPlayerLocked("2026-09-20T12:00:00-05:00", new Date("2026-09-20T17:00:01Z"))).toBe(true));
   it("marks stale timestamps", () => expect(isStale("2026-09-20T10:00:00Z", 60_000, new Date("2026-09-20T10:02:00Z"))).toBe(true));
-  it("canonicalizes accents and punctuation", () => expect(canonicalPlayerId("Eddy Piñeiro", "SF")).toBe("eddy-pineiro-sf"));
+  it("marks future source timestamps stale", () => expect(isStale("2026-09-20T10:10:00Z", 60_000, new Date("2026-09-20T10:00:00Z"))).toBe(true));
+  it("requires an explicit mapping to join provider identities", () => {
+    expect(providerPlayerId("espn", "123")).toBe("espn:123");
+    expect(providerPlayerId("espn", "123")).not.toBe(providerPlayerId("sportsdataio", "123"));
+  });
 });
 
 describe("ESPN schedule context", () => {

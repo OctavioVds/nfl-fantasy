@@ -6,6 +6,13 @@ export interface NewsProvider { name: string; getNews(season: number, week: numb
 export interface SportsDataProvider { name: string; getSchedule(season: number, week: number): Promise<ProviderResult<unknown[]>> }
 export interface ProjectionProvider { name: string; getProjections(season: number, week: number): Promise<ProviderResult<unknown[]>> }
 
+export class MissingProviderCredentialsError extends Error {
+  constructor(provider: string, variableName: string) {
+    super(`${provider}: falta configurar ${variableName}.`);
+    this.name = "MissingProviderCredentialsError";
+  }
+}
+
 export async function withTimeout<T>(promise: Promise<T>, ms = 6000): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`Provider timeout after ${ms}ms`)), ms); });

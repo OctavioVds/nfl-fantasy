@@ -13,6 +13,7 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const dataUpdatedAt = snapshot.dataUpdatedAt ?? snapshot.dataAsOf;
 
   const starters = useMemo(() => snapshot.scoreMode === "actual" ? snapshot.roster.filter((p) => !["Bench", "IR"].includes(p.slot)) : optimizeLineup(snapshot.roster), [snapshot.roster, snapshot.scoreMode]);
   const starterIds = useMemo(() => new Set(starters.map((p) => p.canonicalPlayerId)), [starters]);
@@ -25,9 +26,12 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "No se pudo sincronizar");
       setSnapshot(body);
-      setSyncNotice(body.dataAsOf === snapshot.dataAsOf
-        ? "Análisis recalculado. ESPN/Flaim no entregó cambios nuevos en el roster."
-        : "Roster, waivers y análisis actualizados con una fuente de liga nueva.");
+      const rosterChangeCount = Array.isArray(body.rosterChanges) ? body.rosterChanges.length : 0;
+      setSyncNotice(body.dataVersion === snapshot.dataVersion
+        ? "Análisis recalculado; la fuente de liga no entregó contenido nuevo."
+        : body.freshness === "FRESH"
+          ? `Snapshot nuevo recibido; ${rosterChangeCount} cambio(s) de roster detectado(s).`
+          : "El análisis terminó, pero no hubo una consulta fresca de liga; las acciones siguen bloqueadas.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "No se pudo sincronizar"); }
     finally { setSyncing(false); }
   }
@@ -36,14 +40,14 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">FANTASY VALDES · PPR · 10 EQUIPOS</p>
+          <p className="eyebrow">{snapshot.freshness !== "STALE" ? [snapshot.leagueName, snapshot.scoringLabel, snapshot.teamCount ? `${snapshot.teamCount} EQUIPOS` : undefined].filter(Boolean).join(" · ") : "LIGA PRIVADA · DATOS NO DISPONIBLES"}</p>
           <h1>COMMAND <span>CENTER</span></h1>
         </div>
         <div className="sync-block">
           <div className={`health health-${snapshot.health.toLowerCase()}`}><i />{snapshot.health}</div>
           <button className="sync-button" onClick={sync} disabled={syncing}>
             <span className={syncing ? "spinner active" : "spinner"} />
-            {syncing ? "Actualizando" : "Actualizar"}
+            {syncing ? "Consultando fuentes…" : "Sincronizar"}
           </button>
         </div>
       </header>
@@ -64,6 +68,7 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
       )}
       {error && <section className="error" role="alert">{error}</section>}
       {syncNotice && <section className="sync-notice" role="status">{syncNotice}</section>}
+      {!!snapshot.rosterChanges?.length && <section className="sync-notice" role="status"><strong>Cambios desde la última consulta:</strong> {snapshot.rosterChanges.map((change) => `${rosterChangeLabel(change.kind)} ${change.playerName}`).join(" · ")}</section>}
 
       {view === "command" && <CommandView snapshot={snapshot} />}
       {view === "lineup" && <LineupView starters={starters} bench={bench} historical={snapshot.freshness === "STALE"} />}
@@ -72,8 +77,9 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
 
       <footer>
         <span>Temporada {snapshot.season} · Semana {snapshot.week}</span>
-        <span>Datos ESPN/Flaim: {formatMonterrey(snapshot.dataAsOf)}</span>
-        <span>Análisis recalculado: {formatMonterrey(snapshot.generatedAt)}</span>
+        <span>DATA UPDATED AT: {dataUpdatedAt ? formatMonterrey(dataUpdatedAt) : "Sin consulta de liga"}</span>
+        <span>SOURCE FETCHED AT: {snapshot.dataFetchedAt ? formatMonterrey(snapshot.dataFetchedAt) : "No informado"}</span>
+        <span>ANALYSIS GENERATED AT: {formatMonterrey(snapshot.generatedAt)}</span>
       </footer>
     </main>
   );
@@ -91,7 +97,7 @@ function CommandView({ snapshot }: { snapshot: SyncSnapshot }) {
   return <>
     <section className="score-strip">
       <Metric label={snapshot.scoreMode === "actual" ? "Mi marcador" : "Mi proyección"} value={snapshot.projectedScore == null ? "—" : snapshot.projectedScore.toFixed(1)} unit="PTS" />
-      <Metric label={snapshot.opponentName ?? "Rival"} value={snapshot.opponentScore == null ? "—" : snapshot.opponentScore.toFixed(1)} unit="PTS" />
+      <Metric label={`Rival · ${snapshot.opponentName ?? "sin datos"}`} value={snapshot.opponentScore == null ? "—" : snapshot.opponentScore.toFixed(1)} unit={snapshot.scoreMode === "actual" ? "PROYECCIÓN DEL RIVAL · PTS" : "PROYECCIÓN · PTS"} />
       <Metric label="Victoria" value={snapshot.winProbability == null ? "—" : `${snapshot.winProbability}%`} unit={snapshot.winProbability == null ? "SIN DATOS" : "SIMULACIÓN"} />
       <Metric label="Récord" value={recordValue} unit={recordUnit} />
       <Metric label="Actualidad" value={snapshot.freshness} unit={snapshot.sources.length ? `${snapshot.sources.length} FUENTE(S)` : "SIN FUENTE VIVA"} compact />
@@ -113,12 +119,12 @@ function CommandView({ snapshot }: { snapshot: SyncSnapshot }) {
 
 function LineupView({ starters, bench, historical }: { starters: SyncSnapshot["roster"]; bench: SyncSnapshot["roster"]; historical: boolean }) {
   return <section className="panel lineup-panel">
-    <div className="panel-head"><h2>Alineación {starters.some((p) => p.locked) ? "y puntos" : "óptima"}</h2><span>PPR · ESPN + MODELO</span></div>
+    <div className="panel-head"><h2>Alineación {starters.some((p) => p.locked) ? "y puntos" : "óptima"}</h2><span>DATOS DE LIGA · {historical ? "HISTÓRICOS" : "FRESCOS"}</span></div>
     <div className="decision-note">Veredicto directo con piso estimado, mediana y techo. El piso es un percentil conservador, no puntos garantizados. Cada fila revela el factor oculto y los datos que faltan.</div>
     <h3>Titulares recomendados</h3>
-    <div className="player-list"><DecisionHeader />{starters.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} starter />)}</div>
+    <div className="player-list"><DecisionHeader />{starters.length ? starters.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} starter />) : <Empty message="El roster actual se mostrará después de una sincronización de liga fresca." />}</div>
     <h3>Banca</h3>
-    <div className="player-list"><DecisionHeader />{bench.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} starter={false} />)}</div>
+    <div className="player-list"><DecisionHeader />{bench.length ? bench.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} starter={false} />) : <Empty message="Sin banca disponible." />}</div>
   </section>;
 }
 
@@ -130,7 +136,7 @@ function ActionsView({ snapshot }: { snapshot: SyncSnapshot }) {
     { title: "Manejo del roster", kinds: ["HOLD", "WATCH"] },
   ];
   return <section className="panel">
-    <div className="panel-head"><h2>Action Center</h2><span>{snapshot.freshness === "STALE" ? "HISTÓRICO · NO ACCIONABLE" : "PLAN VALIDADO"}</span></div>
+    <div className="panel-head"><h2>Action Center</h2><span>{snapshot.freshness === "STALE" ? "HISTÓRICO · NO ACCIONABLE" : snapshot.freshness === "DEGRADED" ? "VALIDACIÓN PARCIAL" : "PLAN VALIDADO"}</span></div>
     <div className="decision-note">Ejecuta en este orden. Las reclamaciones alternativas con el mismo jugador a cortar deben colocarse debajo de la prioridad principal en ESPN.</div>
     {!!snapshot.pendingMoves?.length && <div className="decision-note"><b>Movimientos pendientes en ESPN:</b> {snapshot.pendingMoves.map((move) => move.kind === "waiver" ? `tomar a ${move.add}${move.drop ? ` y soltar a ${move.drop}` : ""}` : "trade pendiente").join(" · ")}. No se recomiendan otra vez mientras sigan pendientes.</div>}
     <div className="action-groups">{groups.map((group) => {
@@ -144,13 +150,21 @@ function SystemView({ snapshot }: { snapshot: SyncSnapshot }) {
   return <section className="panel">
     <div className="panel-head"><h2>System Health</h2><span>{snapshot.health}</span></div>
     <div className="decision-note">Los milisegundos miden ejecución, no calidad. “FUENTE EXTERNA” consultó una API; “CÁLCULO LOCAL” procesó los datos ya recibidos; “SNAPSHOT” reutilizó el último roster importado.</div>
-    <div className="agent-grid">{snapshot.agents.map((agent) => <div className="agent" key={agent.name}><div><i className={`state-${agent.status}`} /> <b>{agent.name}</b></div><span>{agent.mode === "external" ? "FUENTE EXTERNA" : agent.mode === "snapshot" ? "SNAPSHOT" : "CÁLCULO LOCAL"} · {agent.latencyMs} ms{agent.records != null ? ` · ${agent.records} registro(s)` : ""}</span>{agent.message && <p>{agent.message}</p>}</div>)}</div>
-    <div className="source-list"><h3>Fuentes</h3>{snapshot.sources.length ? snapshot.sources.map((source) => <div key={`${source.name}-${source.sourceTimestamp}`}><b>{source.name}</b><span>{formatMonterrey(source.sourceTimestamp)}</span></div>) : <Empty message="No hay una fuente viva de liga conectada." />}</div>
+    <div className="agent-grid">{snapshot.agents.map((agent) => <div className="agent" key={agent.name}><div><i className={`state-${agent.status}`} /> <b>{agent.name}</b><strong className={`status-${agent.status}`}>{agent.status === "ok" ? "LIVE" : agent.status === "missing_credentials" ? "MISSING CREDENTIALS" : agent.status === "failed" ? "FAILED" : "STALE"}</strong></div><span>{agent.mode === "external" ? "FUENTE EXTERNA" : agent.mode === "snapshot" ? "SNAPSHOT" : "CÁLCULO LOCAL"} · {agent.latencyMs} ms{agent.records != null ? ` · ${agent.records} registro(s)` : ""}{agent.fetchedAt ? ` · CONSULTA ${formatMonterrey(agent.fetchedAt)}` : ""}</span>{agent.message && <p>{agent.message}</p>}</div>)}</div>
+    <div className="source-list"><h3>Fuentes</h3>{snapshot.sources.length ? snapshot.sources.map((source) => <div key={`${source.name}-${source.sourceTimestamp}`}><b>{source.name}</b><span>DATA UPDATED: {source.sourceTimestamp ? formatMonterrey(source.sourceTimestamp) : "no informado"} · FETCHED AT: {source.fetchedAt ? formatMonterrey(source.fetchedAt) : "no informado"}</span></div>) : <Empty message="No hay una fuente viva de liga conectada." />}</div>
   </section>;
 }
 
 function Metric({ label, value, unit, compact = false }: { label: string; value: string; unit: string; compact?: boolean }) {
   return <div className="metric"><span>{label}</span><strong className={compact ? "compact" : ""}>{value}</strong><small>{unit}</small></div>;
+}
+
+function rosterChangeLabel(kind: NonNullable<SyncSnapshot["rosterChanges"]>[number]["kind"]) {
+  const labels = {
+    ADDED: "Agregado:", DROPPED: "Cortado:", MOVED_TO_BENCH: "A banca:", MOVED_TO_STARTER: "A titular:",
+    MOVED_TO_IR: "A IR:", ACTIVATED_FROM_IR: "Activado de IR:",
+  };
+  return labels[kind];
 }
 
 function DecisionHeader() {

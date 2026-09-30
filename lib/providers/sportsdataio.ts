@@ -1,4 +1,4 @@
-import { retry, withTimeout } from "../providers";
+import { MissingProviderCredentialsError, retry, withTimeout } from "../providers";
 import type { RecentGameUsage } from "../types";
 
 export interface SportsDataProjection {
@@ -72,7 +72,7 @@ type SportsDataDefenseRow = {
 
 export async function fetchSportsDataIoProjections(season: number, week: number): Promise<SportsDataProjection[]> {
   const key = process.env.SPORTSDATAIO_API_KEY;
-  if (!key) throw new Error("SPORTSDATAIO_API_KEY no configurada");
+  if (!key) throw new MissingProviderCredentialsError("SportsDataIO", "SPORTSDATAIO_API_KEY");
   const url = `https://api.sportsdata.io/v3/nfl/projections/json/PlayerGameProjectionStatsByWeek/${season}REG/${week}`;
   const response = await retry(() => withTimeout(fetch(url, {
     headers: { "Ocp-Apim-Subscription-Key": key, Accept: "application/json" },
@@ -166,7 +166,7 @@ export function mapSportsDataRecentUsage(rows: SportsDataGameRow[]): SportsDataR
 
 export async function fetchSportsDataIoRecentUsage(season: number, week: number): Promise<SportsDataRecentBundle> {
   const key = process.env.SPORTSDATAIO_API_KEY;
-  if (!key) throw new Error("SPORTSDATAIO_API_KEY no configurada");
+  if (!key) throw new MissingProviderCredentialsError("SportsDataIO", "SPORTSDATAIO_API_KEY");
   const completedWeeks = Array.from({ length: Math.min(3, Math.max(0, week - 1)) }, (_, index) => week - 1 - index);
   if (!completedWeeks.length) return { players: [], defenseAllowed: [] };
   const responses = await Promise.all(completedWeeks.map(async (completedWeek) => {
@@ -212,7 +212,7 @@ function sumDefined(...values: Array<number | undefined>) {
 
 export async function fetchSportsDataIoInjuries(season: number, week: number): Promise<SportsDataInjury[]> {
   const key = process.env.SPORTSDATAIO_API_KEY;
-  if (!key) throw new Error("SPORTSDATAIO_API_KEY no configurada");
+  if (!key) throw new MissingProviderCredentialsError("SportsDataIO", "SPORTSDATAIO_API_KEY");
   const url = `https://api.sportsdata.io/v3/nfl/stats/json/Injuries/${season}REG/${week}`;
   const response = await retry(() => withTimeout(fetch(url, {
     headers: { "Ocp-Apim-Subscription-Key": key, Accept: "application/json" }, cache: "no-store",

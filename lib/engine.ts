@@ -10,10 +10,6 @@ export function pprPoints(input: {
     (input.recYards ?? 0) / 10 + (input.recTd ?? 0) * 6 - (input.fumblesLost ?? 0) * 2;
 }
 
-export function canonicalPlayerId(name: string, team?: string) {
-  return `${name.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}${team ? `-${team.toLowerCase()}` : ""}`;
-}
-
 export function aggregateProjections(projections: PlayerProjection[]) {
   if (!projections.length) return null;
   const unique = new Map(projections.map((p) => [p.source, p]));
@@ -273,7 +269,8 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
   if (!dropPool.length || !freeAgents.length) return [];
   const quarterbackCount = roster.filter((p) => p.position === "QB" && p.slot !== "IR").length;
 
-  const ranked = freeAgents.filter((candidate) => !(candidate.position === "QB" && quarterbackCount >= 2)).map((candidate) => {
+  const rosterIds = new Set(roster.map((player) => player.canonicalPlayerId));
+  const ranked = freeAgents.filter((candidate) => !candidate.locked && !rosterIds.has(candidate.canonicalPlayerId) && !(candidate.position === "QB" && quarterbackCount >= 2)).map((candidate) => {
     const specialTeamsReplacement = ["DST", "K"].includes(candidate.position)
       ? roster.filter((p) => p.position === candidate.position && !p.locked)
       : [];

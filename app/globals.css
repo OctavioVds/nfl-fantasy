@@ -93,7 +93,13 @@ h1 span { color: var(--amber); }
 .agent > div { display: flex; align-items: center; gap: 7px; font-size: .8rem; }
 .agent > span { color: var(--muted); font: 400 .65rem var(--font-mono); }
 .agent p { margin: 7px 0 0; color: var(--muted); font-size: .72rem; line-height: 1.4; }
-.state-ok, .state-cached { background: var(--green) !important; }
+.state-ok { background: var(--green) !important; }
+.state-cached { background: var(--amber) !important; }
+.state-missing_credentials { background: var(--amber) !important; }
+.agent > div strong { margin-left: auto; color: var(--muted); font: 600 .62rem var(--font-mono); text-align: right; }
+.status-ok { color: var(--green) !important; }
+.status-failed { color: var(--red) !important; }
+.status-cached, .status-missing_credentials, .status-degraded { color: var(--amber) !important; }
 .source-list > div { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: .8rem; }
 .source-list span { color: var(--muted); }
 .empty { color: var(--muted); padding: 20px 2px; font-size: .88rem; }
