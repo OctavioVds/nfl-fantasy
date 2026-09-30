@@ -11,7 +11,7 @@ Updated: 2026-09-30 (America/Monterrey)
 ## Verificación externa
 
 - GitHub muestra `main`, `feat/decision-engine` (2 commits sobre main; sin PR) y `feat/matchup-lineup-v2` (draft PR #1 abierto).
-- El conector de Vercel rechaza leer el deployment por scope de equipo (403); desde el navegador se confirmó que la preview de B está `Ready` para `e6bc074` en `https://q-git-feat-matchup-lineup-v2-octaviovds-projects.vercel.app/`. La UI sigue sin cablear el nuevo motor y muestra la advertencia de datos vencidos con estado global `HEALTHY`. No se hizo deploy de producción.
+- El conector de Vercel rechaza leer el deployment por scope de equipo (403); desde el navegador se confirmó que la preview más reciente de B está `Ready` en `https://q-git-feat-matchup-lineup-v2-octaviovds-projects.vercel.app/`. La UI sigue sin cablear el nuevo motor y muestra la advertencia de datos vencidos con estado global `HEALTHY`. No se hizo deploy de producción.
 - No hay conector Neon. Una consulta de solo lectura sobre la `DATABASE_URL` local confirmó las tablas y las versiones `001_init.sql` y `002_decision_state.sql`; la segunda aparece aplicada por la otra tarea. No se confirmó si la URL es producción ni se aplicaron migraciones desde este carril.
 - `.env.local` contiene `DATABASE_URL`, pero no `SPORTSDATAIO_API_KEY`; SportsDataIO no pudo probarse con credenciales. No se copiaron secretos al clon. La inspección de la rama paralela ya no encuentra el roster estático identificable en `fallback-data.ts`.
 - La rama paralela añade `APP_ACCESS_PASSWORD` server-side con Basic Auth para la app y respuesta 503 fail-closed si falta. El valor configurado en producción no se pudo verificar por el 403 de Vercel.
