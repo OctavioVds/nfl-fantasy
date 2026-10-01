@@ -12,7 +12,7 @@ Updated: 2026-09-30 (America/Monterrey)
 
 | Rama | Chat / dueño | Archivos nuevos / tocados | Migración reservada | Flag | Estado | Última actualización |
 |---|---|---|---|---|---|---|
-| `feat/flaim-live-sync` | Codex: conexión OAuth/MCP Flaim | `lib/flaim/*`, `app/api/flaim/*`, `app/.well-known/oauth-client/route.ts`, UI, proxy, cron, README | `003_flaim_oauth.sql`; solo en la rama, no aplicada | `FLAIM_MCP_SYNC_V1` (apagada por defecto) | Implementación local; integración validada con datos reales de Flaim, OAuth web y Preview pendientes | 2026-10-01 |
+| `feat/flaim-live-sync` | Codex: conexión OAuth/MCP Flaim | `lib/flaim/*`, `app/api/flaim/*`, `app/.well-known/oauth-client/route.ts`, UI, proxy, cron, README | `003_flaim_oauth.sql`; solo en la rama, no aplicada | `FLAIM_MCP_SYNC_V1` (apagada por defecto) | Rama `4521a01` publicada; PR borrador #4; Preview Ready; autorización OAuth y primera sincronización pendientes | 2026-10-01 |
 
 ## Auditoría de coordinación — 2026-10-01
 
@@ -41,3 +41,5 @@ Updated: 2026-09-30 (America/Monterrey)
 - `get_transactions` respondió hasta 25 transacciones con tipo, estado, fecha/semana, equipos, altas/bajas y `faab_bid`; el orden actual de prioridad de waivers no está en la respuesta consultada.
 - Flaim documenta que conectores MCP personalizados usan OAuth y Streamable HTTP. Aún no se verifican el registro automático de este cliente ni el callback desde una Preview pública.
 - Validación local del carril D: lint, typecheck, 64 pruebas y build pasaron. No se aplicó migración a Neon ni se activó el flag en producción.
+- GitHub branch `feat/flaim-live-sync` quedó publicada en `4521a01`; existe PR borrador #4. Vercel muestra la Preview `https://q-385gn8gif-octaviovds-projects.vercel.app/` como Ready.
+- La conexión Vercel de Codex no autoriza el scope del proyecto `q` (403). La bandera está apagada hasta habilitar `FLAIM_MCP_SYNC_V1=1` solo en Preview; no se habilitó producción ni se probó el callback OAuth web.
