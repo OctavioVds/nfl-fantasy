@@ -71,6 +71,11 @@ export interface RosterPlayer {
   futureProjection?: number;
   opportunityScore?: number;
   depthOrder?: number;
+  percentOwned?: number | null;
+  percentStarted?: number | null;
+  marketScope?: "platform_global" | "unavailable";
+  acquisitionState?: "free_agent" | "waivers" | null;
+  waiverClearsAt?: string;
   floor?: number;
   ceiling?: number;
   kickoff?: string;

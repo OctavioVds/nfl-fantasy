@@ -1,19 +1,33 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SyncSnapshot } from "@/lib/types";
 import { optimizeLineup } from "@/lib/engine";
 import { formatMonterrey } from "@/lib/time";
 
 type View = "command" | "lineup" | "actions" | "system";
 
-export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapshot }) {
+export function CommandCenter({ initialSnapshot, flaimEnabled, initialFlaimConnected, autoSync = false, initialError = null, initialNotice = null }: { initialSnapshot: SyncSnapshot; flaimEnabled: boolean; initialFlaimConnected: boolean; autoSync?: boolean; initialError?: string | null; initialNotice?: string | null }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [view, setView] = useState<View>("command");
-  const [syncing, setSyncing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(autoSync);
+  const [error, setError] = useState<string | null>(initialError);
+  const [syncNotice, setSyncNotice] = useState<string | null>(initialNotice);
+  const flaimConnected = initialFlaimConnected;
   const dataUpdatedAt = snapshot.dataUpdatedAt ?? snapshot.dataAsOf;
+
+  useEffect(() => {
+    if (!autoSync) return;
+    fetch("/api/flaim/sync", { method: "POST" })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error ?? "No se pudo importar la liga desde Flaim.");
+        setSnapshot(body);
+        setSyncNotice("Flaim conectado. La liga y el análisis ya están actualizados.");
+      })
+      .catch((cause) => setError(cause instanceof Error ? cause.message : "No se pudo importar la liga desde Flaim."))
+      .finally(() => setSyncing(false));
+  }, [autoSync]);
 
   const starters = useMemo(() => snapshot.scoreMode === "actual" ? snapshot.roster.filter((p) => !["Bench", "IR"].includes(p.slot)) : optimizeLineup(snapshot.roster), [snapshot.roster, snapshot.scoreMode]);
   const starterIds = useMemo(() => new Set(starters.map((p) => p.canonicalPlayerId)), [starters]);
@@ -22,7 +36,7 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
   async function sync() {
     setSyncing(true); setError(null); setSyncNotice(null);
     try {
-      const response = await fetch("/api/sync", { method: "POST" });
+      const response = await fetch(flaimEnabled && flaimConnected ? "/api/flaim/sync" : "/api/sync", { method: "POST" });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "No se pudo sincronizar");
       setSnapshot(body);
@@ -45,6 +59,9 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
         </div>
         <div className="sync-block">
           <div className={`health health-${snapshot.health.toLowerCase()}`}><i />{snapshot.health}</div>
+          {flaimEnabled && <a className={flaimConnected ? "connect-button connected" : "connect-button"} href="/api/flaim/connect">
+            {flaimConnected ? "Flaim conectado" : "Conectar Flaim"}
+          </a>}
           <button className="sync-button" onClick={sync} disabled={syncing}>
             <span className={syncing ? "spinner active" : "spinner"} />
             {syncing ? "Consultando fuentes…" : "Sincronizar"}
