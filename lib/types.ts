@@ -183,6 +183,7 @@ export interface SyncSnapshot {
   teamRecord?: TeamRecord;
   opponentName?: string;
   roster: RosterPlayer[];
+  availablePlayers?: RosterPlayer[];
   recommendations: Recommendation[];
   agents: AgentRun[];
   sources: SourceRef[];

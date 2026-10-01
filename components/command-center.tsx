@@ -5,7 +5,7 @@ import type { SyncSnapshot } from "@/lib/types";
 import { optimizeLineup } from "@/lib/engine";
 import { formatMonterrey } from "@/lib/time";
 
-type View = "command" | "lineup" | "actions" | "system";
+type View = "command" | "lineup" | "available" | "actions" | "system";
 
 export function CommandCenter({ initialSnapshot, flaimEnabled, initialFlaimConnected, autoSync = false, initialError = null, initialNotice = null }: { initialSnapshot: SyncSnapshot; flaimEnabled: boolean; initialFlaimConnected: boolean; autoSync?: boolean; initialError?: string | null; initialNotice?: string | null }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
@@ -70,9 +70,9 @@ export function CommandCenter({ initialSnapshot, flaimEnabled, initialFlaimConne
       </header>
 
       <nav className="nav-tabs" aria-label="Secciones">
-        {(["command", "lineup", "actions", "system"] as View[]).map((item) => (
+        {(["command", "lineup", "available", "actions", "system"] as View[]).map((item) => (
           <button key={item} onClick={() => setView(item)} className={view === item ? "active" : ""}>
-            {item === "command" ? "Resumen" : item === "lineup" ? "Alineación" : item === "actions" ? "Acciones" : "Sistema"}
+            {item === "command" ? "Resumen" : item === "lineup" ? "Alineación" : item === "available" ? "Disponibles" : item === "actions" ? "Acciones" : "Sistema"}
           </button>
         ))}
       </nav>
@@ -89,6 +89,7 @@ export function CommandCenter({ initialSnapshot, flaimEnabled, initialFlaimConne
 
       {view === "command" && <CommandView snapshot={snapshot} />}
       {view === "lineup" && <LineupView starters={starters} bench={bench} historical={snapshot.freshness === "STALE"} />}
+      {view === "available" && <AvailablePlayersView players={snapshot.availablePlayers ?? []} fresh={snapshot.freshness !== "STALE"} />}
       {view === "actions" && <ActionsView snapshot={snapshot} />}
       {view === "system" && <SystemView snapshot={snapshot} />}
 
@@ -161,6 +162,52 @@ function ActionsView({ snapshot }: { snapshot: SyncSnapshot }) {
       return <div className="action-group" key={group.title}><h3>{group.title}</h3>{items.length ? <ExpandableActions items={items} initialCount={3} /> : <p>La plantilla actual no requiere una acción en esta categoría.</p>}</div>;
     })}</div>
   </section>;
+}
+
+function AvailablePlayersView({ players, fresh }: { players: NonNullable<SyncSnapshot["availablePlayers"]>; fresh: boolean }) {
+  const [filter, setFilter] = useState<"all" | "free_agent" | "waivers">("all");
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return players.filter((player) => {
+      const matchesFilter = filter === "all" || player.acquisitionState === filter;
+      const matchesQuery = !normalizedQuery || `${player.name} ${player.team} ${player.position}`.toLocaleLowerCase().includes(normalizedQuery);
+      return matchesFilter && matchesQuery;
+    });
+  }, [filter, players, query]);
+
+  if (!fresh) return <section className="panel"><div className="panel-head"><h2>Disponibles de la liga</h2><span>ESPERANDO SNAPSHOT FRESCO</span></div><Empty message="Conecta Flaim y sincroniza para consultar agentes libres y waivers actuales." /></section>;
+
+  return <section className="panel">
+    <div className="panel-head"><h2>Disponibles de la liga</h2><span>{players.length} JUGADORES CONSULTADOS · MÁXIMO 100</span></div>
+    <div className="availability-toolbar">
+      <label>Buscar jugador
+        <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre, equipo o posición" />
+      </label>
+      <label>Situación
+        <select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}>
+          <option value="all">Todos</option>
+          <option value="free_agent">Agentes libres</option>
+          <option value="waivers">En waivers</option>
+        </select>
+      </label>
+      <span className="availability-count">Mostrando {filtered.length} de {players.length}</span>
+    </div>
+    {filtered.length ? <div className="available-player-list">
+      {filtered.map((player) => <article className="available-player" key={player.canonicalPlayerId}>
+        <div className="available-player-main"><strong>{player.name}</strong><small>{player.team} · {player.position}</small></div>
+        <span className={`availability-state ${player.acquisitionState ?? "unknown"}`}>{availabilityLabel(player.acquisitionState)}</span>
+        <small>{player.projection != null ? `${player.projection.toFixed(1)} pts proyectados` : "Proyección no disponible"}</small>
+        {player.waiverClearsAt && <small>Se libera: {formatMonterrey(player.waiverClearsAt)}</small>}
+      </article>)}
+    </div> : <Empty message={players.length ? "No hay resultados con esos filtros." : "Flaim no devolvió jugadores disponibles en esta consulta."} />}
+  </section>;
+}
+
+function availabilityLabel(state: SyncSnapshot["roster"][number]["acquisitionState"]) {
+  if (state === "free_agent") return "Agente libre";
+  if (state === "waivers") return "En waivers";
+  return "Disponible · estado no confirmado";
 }
 
 function SystemView({ snapshot }: { snapshot: SyncSnapshot }) {

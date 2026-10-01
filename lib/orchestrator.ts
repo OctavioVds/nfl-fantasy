@@ -206,6 +206,7 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     teamRecord: stale ? undefined : league.teamRecord,
     opponentName: stale ? undefined : activeOpponent?.name,
     roster: stale ? [] : roster,
+    availablePlayers: stale ? [] : freeAgents,
     recommendations: stale ? [] : recommendationRows
       .sort((a, b) => {
         const category = (kind: string) => ["ADD", "DROP", "STREAM"].includes(kind) ? 1 : ["START", "SIT"].includes(kind) ? 2 : kind === "TRADE" ? 3 : 4;

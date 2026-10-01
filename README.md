@@ -31,7 +31,7 @@ npm run build
 1. Abre la app e inicia sesión con la contraseña de acceso que ya configuraste.
 2. Pulsa **Conectar Flaim**.
 3. Inicia sesión en Flaim con la cuenta que ya tiene conectada ESPN y acepta el acceso de solo lectura.
-4. Regresarás a la app; importará el roster y calculará las decisiones automáticamente. Para una actualización posterior, pulsa **Sincronizar**.
+4. Regresarás a la app; importará el roster y hasta 100 jugadores disponibles, y calculará las decisiones automáticamente. La pestaña **Disponibles** separa agentes libres de jugadores en waivers. Para una actualización posterior, pulsa **Sincronizar**.
 
 `POST /api/sync` recalcula el último snapshot y consulta los proveedores NFL configurados. `Promise.allSettled` conserva resultados de proveedores sanos cuando otro falla.
 

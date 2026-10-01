@@ -41,7 +41,7 @@ export async function fetchFlaimLeagueSnapshot(): Promise<ExternalSyncPayload> {
   await client.listTools();
   const [rosterResult, freeAgentsResult, matchupResult, transactionsResult] = await Promise.allSettled([
     client.callTool("get_roster", rosterArguments),
-    client.callTool("get_free_agents", { ...sharedArguments, count: 25 }),
+    client.callTool("get_free_agents", { ...sharedArguments, count: 100 }),
     client.callTool("get_matchups", matchupArguments),
     client.callTool("get_transactions", { ...sharedArguments, type: "waiver" }),
   ]);
