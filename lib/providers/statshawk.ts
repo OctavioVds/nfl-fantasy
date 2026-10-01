@@ -1,4 +1,4 @@
-import { retry, withTimeout } from "../providers";
+import { MissingProviderCredentialsError, retry, withTimeout } from "../providers";
 
 export interface StatsHawkContext {
   competition: string;
@@ -8,7 +8,7 @@ export interface StatsHawkContext {
 
 export async function fetchStatsHawkContext(season: number): Promise<StatsHawkContext | null> {
   const key = process.env.STATSHAWK_API_KEY;
-  if (!key) return null;
+  if (!key) throw new MissingProviderCredentialsError("StatsHawk", "STATSHAWK_API_KEY");
   const url = `https://api.statshawk.ai/v1/competitions/nfl/editions/${season}/contests`;
   const response = await retry(() => withTimeout(fetch(url, {
     headers: { "X-API-Key": key, Accept: "application/json" }, cache: "no-store",

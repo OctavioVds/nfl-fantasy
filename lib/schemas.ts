@@ -17,9 +17,12 @@ export const externalPlayerSchema = z.object({
 export const externalSyncSchema = z.object({
   league: z.object({
     name: z.string().min(1),
+    leagueId: z.string().min(1).optional(),
+    teamId: z.string().min(1).optional(),
     season: z.number().int().min(2020).max(2100),
     week: z.number().int().min(1).max(18),
-    scoring: z.record(z.string(), z.number()).default({ reception: 1 }),
+    teamCount: z.number().int().min(1).max(32).optional(),
+    scoring: z.record(z.string(), z.number()).optional(),
   }),
   roster: z.array(externalPlayerSchema).min(1),
   teamRecord: z.object({
@@ -59,6 +62,11 @@ export const externalSyncSchema = z.object({
   })).optional(),
   source: z.enum(["flaim", "espn", "manual", "chatgpt"]),
   sourceTimestamp: z.string().datetime(),
+  fetchedAt: z.string().datetime().optional(),
+}).superRefine((payload, context) => {
+  const rosterIds = new Set(payload.roster.map((player) => player.providerId));
+  const occupiedAvailableIds = payload.freeAgents.filter((player) => rosterIds.has(player.providerId)).map((player) => player.providerId);
+  if (occupiedAvailableIds.length) context.addIssue({ code: "custom", path: ["freeAgents"], message: "Un jugador del roster aparece también como disponible." });
 });
 
 export type ExternalSyncPayload = z.infer<typeof externalSyncSchema>;

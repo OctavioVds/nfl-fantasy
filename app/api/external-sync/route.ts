@@ -19,5 +19,5 @@ export async function POST(request: NextRequest) {
   const parsed = externalSyncSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid payload", details: parsed.error.flatten() }, { status: 400 });
   try { return NextResponse.json(await synchronize(parsed.data)); }
-  catch (error) { await captureServerEvent("sync_failed", { message: error instanceof Error ? error.message : "unknown" }); return NextResponse.json({ error: "Sync failed" }, { status: 500 }); }
+  catch (error) { await captureServerEvent("sync_failed", { error_name: error instanceof Error ? error.name : "UnknownError" }); return NextResponse.json({ error: "Sync failed" }, { status: 500 }); }
 }
