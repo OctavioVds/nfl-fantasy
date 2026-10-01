@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { canonicalPlayerId, optimizeLineup } from "@/lib/engine";
+import { optimizeLineup } from "@/lib/engine";
+import { providerPlayerId } from "@/lib/player-identity";
 import { calculateMatchupProfile, isMatchupLineupV2Enabled, MATCHUP_MAX_ADJUSTMENT, optimizeMatchupAwareLineup, probabilityOutscores, strategyScore } from "@/lib/lineup/matchup";
 import { matchupSignalSchema, parseMatchupSignals, type MatchupSignal } from "@/lib/lineup/schemas";
 import type { RosterPlayer } from "@/lib/types";
 
 const now = new Date("2026-09-30T18:00:00Z");
 const player = (name: string, position: RosterPlayer["position"], projection: number, slot = "Bench"): RosterPlayer => ({
-  canonicalPlayerId: canonicalPlayerId(name), name, position, team: "X", slot,
+  canonicalPlayerId: providerPlayerId("test", name), name, position, team: "X", slot,
   projection, floor: projection * 0.7, ceiling: projection * 1.3,
   recentGames: [{ week: 3, snapShare: 0.8, targetShare: 0.25, routeParticipation: 0.9, touches: 15 }],
 });
