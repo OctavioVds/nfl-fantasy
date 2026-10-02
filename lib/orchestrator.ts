@@ -190,13 +190,13 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
   const sources = buildSourceRefs(league, period, firstWave);
   const recommendationRows = [...waiverActions, ...lineupActions, ...tradeActions, ...rosterActions];
   const snapshot: SyncSnapshot = {
-    id: runId, syncRunId: runId, season: period.season, week: period.week,
-    leagueName: stale ? "Liga no conectada" : league.league.name,
+    id: runId, syncRunId: runId, season: stale ? league.league.season : period.season, week: stale ? league.league.week : period.week,
+    leagueName: league.league.name,
     generatedAt: started.toISOString(), dataAsOf: league.sourceTimestamp,
     dataUpdatedAt: league.sourceTimestamp, dataFetchedAt: league.fetchedAt,
     dataReceivedAt: started.toISOString(),
-    dataVersion: leagueDataVersion(league), teamCount: stale ? undefined : league.league.teamCount,
-    scoringLabel: stale ? undefined : scoringLabel(league),
+    dataVersion: leagueDataVersion(league), teamCount: league.league.teamCount,
+    scoringLabel: scoringLabel(league),
     freshness: stale ? "STALE" : failed.length ? "DEGRADED" : "FRESH",
     health: stale || failed.length ? "DEGRADED" : "HEALTHY",
     projectedScore: stale || projectedScore == null ? null : Math.round(projectedScore * 10) / 10,
@@ -205,8 +205,8 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     scoreMode: stale ? undefined : showingActual ? "actual" : "projection",
     teamRecord: stale ? undefined : league.teamRecord,
     opponentName: stale ? undefined : activeOpponent?.name,
-    roster: stale ? [] : roster,
-    availablePlayers: stale ? [] : freeAgents,
+    roster,
+    availablePlayers: freeAgents,
     recommendations: stale ? [] : recommendationRows
       .sort((a, b) => {
         const category = (kind: string) => ["ADD", "DROP", "STREAM"].includes(kind) ? 1 : ["START", "SIT"].includes(kind) ? 2 : kind === "TRADE" ? 3 : 4;

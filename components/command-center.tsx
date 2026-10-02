@@ -29,7 +29,7 @@ export function CommandCenter({ initialSnapshot, flaimEnabled, initialFlaimConne
       .finally(() => setSyncing(false));
   }, [autoSync]);
 
-  const starters = useMemo(() => snapshot.scoreMode === "actual" ? snapshot.roster.filter((p) => !["Bench", "IR"].includes(p.slot)) : optimizeLineup(snapshot.roster), [snapshot.roster, snapshot.scoreMode]);
+  const starters = useMemo(() => snapshot.freshness === "STALE" || snapshot.scoreMode === "actual" ? snapshot.roster.filter((p) => !["Bench", "IR"].includes(p.slot)) : optimizeLineup(snapshot.roster), [snapshot.roster, snapshot.scoreMode, snapshot.freshness]);
   const starterIds = useMemo(() => new Set(starters.map((p) => p.canonicalPlayerId)), [starters]);
   const bench = useMemo(() => snapshot.roster.filter((p) => p.slot !== "IR" && !starterIds.has(p.canonicalPlayerId)).map((p) => ({ ...p, slot: "Bench" })), [snapshot.roster, starterIds]);
 
@@ -55,7 +55,7 @@ export function CommandCenter({ initialSnapshot, flaimEnabled, initialFlaimConne
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">{snapshot.freshness !== "STALE" ? [snapshot.leagueName, snapshot.scoringLabel, snapshot.teamCount ? `${snapshot.teamCount} EQUIPOS` : undefined].filter(Boolean).join(" · ") : "LIGA PRIVADA · DATOS NO DISPONIBLES"}</p>
+          <p className="eyebrow">{snapshot.freshness !== "STALE" ? [snapshot.leagueName, snapshot.scoringLabel, snapshot.teamCount ? `${snapshot.teamCount} EQUIPOS` : undefined].filter(Boolean).join(" · ") : [snapshot.leagueName, `HISTÓRICO · ${snapshot.season} SEMANA ${snapshot.week}`].filter(Boolean).join(" · ")}</p>
           <h1>COMMAND <span>CENTER</span></h1>
         </div>
         <div className="sync-block">
@@ -138,9 +138,9 @@ function CommandView({ snapshot }: { snapshot: SyncSnapshot }) {
 
 function LineupView({ starters, bench, historical }: { starters: SyncSnapshot["roster"]; bench: SyncSnapshot["roster"]; historical: boolean }) {
   return <section className="panel lineup-panel">
-    <div className="panel-head"><h2>Alineación {starters.some((p) => p.locked) ? "y puntos" : "óptima"}</h2><span>DATOS DE LIGA · {historical ? "HISTÓRICOS" : "FRESCOS"}</span></div>
+    <div className="panel-head"><h2>{historical ? "Alineación guardada" : `Alineación ${starters.some((p) => p.locked) ? "y puntos" : "óptima"}`}</h2><span>DATOS DE LIGA · {historical ? "HISTÓRICOS" : "FRESCOS"}</span></div>
     <div className="decision-note">Veredicto directo con piso estimado, mediana y techo. El piso es un percentil conservador, no puntos garantizados. Cada fila revela el factor oculto y los datos que faltan.</div>
-    <h3>Titulares recomendados</h3>
+    <h3>{historical ? "Titulares guardados" : "Titulares recomendados"}</h3>
     <div className="player-list"><DecisionHeader />{starters.length ? starters.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} starter />) : <Empty message="El roster actual se mostrará después de una sincronización de liga fresca." />}</div>
     <h3>Banca</h3>
     <div className="player-list"><DecisionHeader />{bench.length ? bench.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} starter={false} />) : <Empty message="Sin banca disponible." />}</div>

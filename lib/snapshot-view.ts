@@ -19,8 +19,6 @@ export function snapshotForDisplay(snapshot: SyncSnapshot, now = new Date()): Sy
 
   return {
     ...snapshot,
-    season: period.season,
-    week: period.week,
     leagueName: snapshot.leagueName || "Liga no conectada",
     freshness: "STALE",
     health: "DEGRADED",

@@ -55,5 +55,5 @@ Updated: 2026-10-02 (America/Monterrey)
 ## Recuperación de snapshots de liga guardados — 2026-10-02
 
 - `/api/sync` recalcula el último snapshot que recibió `/api/external-sync`; no obtiene roster de ESPN por sí solo. No se encontró en este repositorio un proceso externo que envíe snapshots nuevos.
-- Si el snapshot guardado está vencido, la pantalla conserva el roster real y los disponibles como históricos, pero bloquea recomendaciones actuales.
+- Si el snapshot está vencido, el recálculo conserva roster y disponibles del último ingest, etiqueta la semana de origen y bloquea recomendaciones actuales. Así también se recupera un ingest que antes se había guardado con el roster oculto.
 - El snapshot disponible en la Preview pertenece a semana 3; para mostrar datos nuevos de semana 4 se necesita que vuelva a funcionar la fuente que enviaba snapshots o completar OAuth Flaim.
