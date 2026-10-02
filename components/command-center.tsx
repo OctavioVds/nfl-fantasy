@@ -36,7 +36,10 @@ export function CommandCenter({ initialSnapshot, flaimEnabled, initialFlaimConne
   async function sync() {
     setSyncing(true); setError(null); setSyncNotice(null);
     try {
-      const response = await fetch(flaimEnabled && flaimConnected ? "/api/flaim/sync" : "/api/sync", { method: "POST" });
+      if (flaimEnabled && !flaimConnected) {
+        throw new Error("Flaim aún no está conectado. Pulsa Conectar Flaim; no se consultó ni se presentó el snapshot vencido como si fuera nuevo.");
+      }
+      const response = await fetch(flaimEnabled ? "/api/flaim/sync" : "/api/sync", { method: "POST" });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "No se pudo sincronizar");
       setSnapshot(body);

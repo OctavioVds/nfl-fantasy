@@ -4,6 +4,25 @@ import { encryptJson, decryptJson, type FlaimTokenSet } from "./storage";
 export const FLAIM_MCP_URL = "https://api.flaim.app/mcp";
 
 type JsonRecord = Record<string, unknown>;
+export type FlaimOAuthFailureCode =
+  | "authorization_metadata_unavailable"
+  | "pkce_unavailable"
+  | "client_registration_unavailable"
+  | "client_registration_failed"
+  | "redirect_uri_rejected"
+  | "oauth_setup_failed";
+
+export class FlaimOAuthSetupError extends Error {
+  constructor(readonly code: FlaimOAuthFailureCode, message: string) {
+    super(message);
+    this.name = "FlaimOAuthSetupError";
+  }
+}
+
+export function classifyRegistrationFailure(providerCode: unknown): FlaimOAuthFailureCode {
+  return providerCode === "invalid_redirect_uri" ? "redirect_uri_rejected" : "client_registration_failed";
+}
+
 type OAuthMetadata = JsonRecord & {
   authorization_endpoint: string;
   token_endpoint: string;
@@ -69,7 +88,14 @@ async function jsonRequest(url: string, init?: RequestInit): Promise<JsonRecord>
     value = {};
   }
   if (!response.ok || !value || typeof value !== "object") {
-    throw new Error("Flaim no permitió iniciar la conexión OAuth.");
+    const providerCode = value && typeof value === "object" && typeof (value as JsonRecord).error === "string"
+      ? (value as JsonRecord).error as string
+      : "";
+    const code = classifyRegistrationFailure(providerCode);
+    const message = code === "redirect_uri_rejected"
+      ? "Flaim rechazó la URL de retorno OAuth de esta app."
+      : "Flaim no pudo registrar el cliente OAuth.";
+    throw new FlaimOAuthSetupError(code, message);
   }
   return value as JsonRecord;
 }
@@ -127,7 +153,7 @@ async function resourceMetadata() {
       // Try the next discovery location.
     }
   }
-  throw new Error("Flaim no publicó la información de autorización OAuth necesaria.");
+  throw new FlaimOAuthSetupError("authorization_metadata_unavailable", "Flaim no publicó la información de autorización OAuth necesaria.");
 }
 
 async function authorizationMetadata(issuer: string): Promise<OAuthMetadata> {
@@ -146,15 +172,23 @@ async function authorizationMetadata(issuer: string): Promise<OAuthMetadata> {
       // Try the next standards-defined discovery URL.
     }
   }
-  throw new Error("Flaim no publicó sus endpoints de autorización OAuth.");
+  throw new FlaimOAuthSetupError("authorization_metadata_unavailable", "Flaim no publicó sus endpoints de autorización OAuth.");
 }
 
 async function registerClient(metadata: OAuthMetadata, origin: string, redirectUri: string) {
+  const configuredClientId = process.env.FLAIM_OAUTH_CLIENT_ID?.trim();
+  if (configuredClientId) {
+    const configuredClientSecret = process.env.FLAIM_OAUTH_CLIENT_SECRET?.trim();
+    return {
+      clientId: configuredClientId,
+      clientSecret: configuredClientSecret || undefined,
+    };
+  }
   if (metadata.client_id_metadata_document_supported === true) {
     return { clientId: origin + "/.well-known/oauth-client", clientSecret: undefined };
   }
   if (!metadata.registration_endpoint) {
-    throw new Error("Flaim no admite el registro automático de esta app. Se necesita habilitarla con Flaim.");
+    throw new FlaimOAuthSetupError("client_registration_unavailable", "Flaim no ofrece registro automático de clientes OAuth.");
   }
   const registration = await jsonRequest(metadata.registration_endpoint, {
     method: "POST",
@@ -168,7 +202,9 @@ async function registerClient(metadata: OAuthMetadata, origin: string, redirectU
       token_endpoint_auth_method: "none",
     }),
   });
-  if (typeof registration.client_id !== "string") throw new Error("Flaim no registró esta app para OAuth.");
+  if (typeof registration.client_id !== "string") {
+    throw new FlaimOAuthSetupError("client_registration_failed", "Flaim no devolvió un identificador de cliente OAuth.");
+  }
   return {
     clientId: registration.client_id,
     clientSecret: typeof registration.client_secret === "string" ? registration.client_secret : undefined,
@@ -182,7 +218,7 @@ export async function createAuthorizationTransaction(requestOrigin: string) {
   const discoveredResource = await resourceMetadata();
   const auth = await authorizationMetadata(discoveredResource.issuer);
   if (!auth.code_challenge_methods_supported?.includes("S256")) {
-    throw new Error("Flaim no ofrece PKCE S256, que se requiere para proteger el acceso.");
+    throw new FlaimOAuthSetupError("pkce_unavailable", "Flaim no ofrece PKCE S256, que se requiere para proteger el acceso.");
   }
   const client = await registerClient(auth, origin, redirectUri);
   const verifier = randomBytes(32).toString("base64url");

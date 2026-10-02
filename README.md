@@ -33,6 +33,8 @@ npm run build
 3. Inicia sesión en Flaim con la cuenta que ya tiene conectada ESPN y acepta el acceso de solo lectura.
 4. Regresarás a la app; importará el roster y hasta 100 jugadores disponibles, y calculará las decisiones automáticamente. La pestaña **Disponibles** separa agentes libres de jugadores en waivers. Para una actualización posterior, pulsa **Sincronizar**.
 
+Si la autorización muestra `invalid_redirect_uri`, Flaim rechazó la URL `/api/flaim/callback` del dominio del Preview. Flaim debe autorizar ese callback OAuth antes de poder conectar la app. Si entrega un client ID y secreto de cliente, se configuran server-side como `FLAIM_OAUTH_CLIENT_ID` y `FLAIM_OAUTH_CLIENT_SECRET`; nunca se guardan en el cliente ni en el repositorio.
+
 `POST /api/sync` recalcula el último snapshot y consulta los proveedores NFL configurados. `Promise.allSettled` conserva resultados de proveedores sanos cuando otro falla.
 
 ## Persistencia

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAuthorizationTransaction, oauthCookieValue, publicAppOrigin } from "@/lib/flaim/oauth";
+import { createAuthorizationTransaction, FlaimOAuthSetupError, oauthCookieValue, publicAppOrigin } from "@/lib/flaim/oauth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -18,9 +18,13 @@ export async function GET(request: NextRequest) {
     });
     return response;
   } catch (error) {
-    console.error(JSON.stringify({ event: "flaim_oauth_start_failed", errorName: error instanceof Error ? error.name : "UnknownError" }));
+    const code = error instanceof FlaimOAuthSetupError ? error.code : "oauth_setup_failed";
+    console.error(JSON.stringify({ event: "flaim_oauth_start_failed", code }));
     const target = new URL("/", publicAppOrigin(request.nextUrl.origin));
-    target.searchParams.set("flaim_error", "setup");
+    target.searchParams.set("flaim_error", code);
+    if (code === "redirect_uri_rejected") {
+      target.searchParams.set("flaim_redirect_uri", publicAppOrigin(request.nextUrl.origin) + "/api/flaim/callback");
+    }
     return NextResponse.redirect(target);
   }
 }
