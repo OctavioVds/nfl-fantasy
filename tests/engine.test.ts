@@ -22,6 +22,25 @@ describe("waiver decisions", () => {
     const moves = waiverRecommendations([p("Drop", "WR", 7), p("Hold", "RB", 14)], [p("Add", "WR", 13, "FA", 14)]);
     expect(moves[0]).toMatchObject({ kind: "ADD", target: "Add", alternative: "Drop", actionable: true });
   });
+  it("keeps Flaim market labels behind its feature flag", () => {
+    const original = process.env.FLAIM_MCP_SYNC_V1;
+    try {
+      process.env.FLAIM_MCP_SYNC_V1 = "0";
+      const roster = [p("Drop", "WR", 7), p("Hold", "RB", 14)];
+      const candidate = { ...p("Add", "WR", 13, "FA", 14), acquisitionState: "waivers" as const, marketScope: "platform_global" as const, percentOwned: 20 };
+      const legacy = waiverRecommendations(roster, [candidate])[0];
+      expect(legacy?.headline).toContain("TOMA A Add");
+      expect(legacy?.why.some((item) => item.text.includes("Mercado ESPN global"))).toBe(false);
+
+      process.env.FLAIM_MCP_SYNC_V1 = "1";
+      const live = waiverRecommendations(roster, [candidate])[0];
+      expect(live?.headline).toContain("RECLAMA A Add");
+      expect(live?.why.some((item) => item.text.includes("Mercado ESPN global"))).toBe(true);
+    } finally {
+      if (original === undefined) delete process.env.FLAIM_MCP_SYNC_V1;
+      else process.env.FLAIM_MCP_SYNC_V1 = original;
+    }
+  });
   it("does not recommend a worse free agent", () => expect(waiverRecommendations([p("Hold", "WR", 12)], [p("Worse", "WR", 5, "FA")])).toEqual([]));
   it("does not cut a high-opportunity bench player", () => {
     const hold = { ...p("Valuable hold", "WR", 12), opportunityScore: 85 };

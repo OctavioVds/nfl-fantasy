@@ -26,6 +26,10 @@ h1 span { color: var(--amber); }
 .health-error i, .state-failed { background: var(--red) !important; }
 .sync-button { border: 0; border-radius: 3px; color: #241500; background: var(--amber); font: 700 .92rem var(--font-display); text-transform: uppercase; letter-spacing: .06em; padding: 11px 18px; cursor: pointer; display: flex; align-items: center; gap: 9px; }
 .sync-button:disabled { opacity: .68; cursor: progress; }
+.connect-button { border: 1px solid var(--green); border-radius: 3px; color: var(--green); background: transparent; font: 700 .8rem var(--font-display); text-align: center; text-decoration: none; text-transform: uppercase; letter-spacing: .04em; padding: 11px 13px; white-space: nowrap; }
+.connect-button.connected { color: var(--bg); background: var(--green); }
+.connect-button { border: 1px solid var(--green); border-radius: 3px; color: var(--green); background: transparent; font: 700 .8rem var(--font-display); text-align: center; text-decoration: none; text-transform: uppercase; letter-spacing: .04em; padding: 11px 13px; white-space: nowrap; }
+.connect-button.connected { color: var(--bg); background: var(--green); }
 .spinner { display: none; width: 13px; height: 13px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; }
 .spinner.active { display: inline-block; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -87,6 +91,19 @@ h1 span { color: var(--amber); }
 .action-group { border: 1px solid var(--line); padding: 12px; min-height: 100px; }
 .action-group h3 { margin: 0 0 8px; font: 700 .78rem var(--font-mono); color: var(--amber); }
 .action-group > p { color: var(--muted); font-size: .8rem; }
+.availability-toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.availability-toolbar label { display: grid; gap: 5px; color: var(--muted); font: 600 .66rem var(--font-mono); text-transform: uppercase; }
+.availability-toolbar input, .availability-toolbar select { min-width: 190px; border: 1px solid var(--line); border-radius: 3px; padding: 9px 10px; color: var(--text); background: var(--panel-2); font: 400 .8rem var(--font-body); text-transform: none; }
+.availability-count { margin-left: auto; color: var(--muted); font: 500 .68rem var(--font-mono); }
+.available-player-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.available-player { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 7px 12px; border: 1px solid var(--line); background: var(--panel-2); padding: 11px 12px; }
+.available-player-main { display: grid; gap: 3px; }
+.available-player-main strong { font-size: .88rem; }
+.available-player small { color: var(--muted); font: 400 .67rem var(--font-mono); }
+.availability-state { justify-self: end; border: 1px solid var(--line); border-radius: 999px; padding: 4px 8px; color: var(--muted); font: 600 .61rem var(--font-mono); white-space: nowrap; }
+.availability-state.free_agent { border-color: rgba(112, 209, 139, .4); color: var(--green); }
+.availability-state.waivers { border-color: rgba(242, 169, 59, .5); color: var(--amber); }
+.available-player > small { grid-column: 1 / -1; }
 .decision-note { margin: 14px 0 4px; padding: 11px 13px; border-left: 3px solid var(--blue); background: rgba(75, 141, 181, .08); color: #c6d2cc; font-size: .8rem; line-height: 1.5; }
 .agent-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
 .agent { border: 1px solid var(--line); background: var(--panel-2); padding: 12px; min-height: 78px; }
@@ -116,6 +133,8 @@ footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10
   .metric:last-child { border-bottom: 0; }
   .dashboard-grid { grid-template-columns: 1fr; }
   .agent-grid, .action-groups { grid-template-columns: 1fr; }
+  .available-player-list { grid-template-columns: 1fr; }
+  .availability-count { width: 100%; margin-left: 0; }
   .player-list { overflow-x: auto; }
   .decision-header, .player-row { min-width: 760px; }
 }

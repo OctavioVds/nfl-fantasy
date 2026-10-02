@@ -1,28 +1,43 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SyncSnapshot } from "@/lib/types";
 import { optimizeLineup } from "@/lib/engine";
 import { formatMonterrey } from "@/lib/time";
 
-type View = "command" | "lineup" | "actions" | "system";
+type View = "command" | "lineup" | "available" | "actions" | "system";
 
-export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapshot }) {
+export function CommandCenter({ initialSnapshot, flaimEnabled, initialFlaimConnected, autoSync = false, initialError = null, initialNotice = null }: { initialSnapshot: SyncSnapshot; flaimEnabled: boolean; initialFlaimConnected: boolean; autoSync?: boolean; initialError?: string | null; initialNotice?: string | null }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [view, setView] = useState<View>("command");
-  const [syncing, setSyncing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(autoSync);
+  const [error, setError] = useState<string | null>(initialError);
+  const [syncNotice, setSyncNotice] = useState<string | null>(initialNotice);
+  const flaimConnected = initialFlaimConnected;
   const dataUpdatedAt = snapshot.dataUpdatedAt ?? snapshot.dataAsOf;
 
-  const starters = useMemo(() => snapshot.scoreMode === "actual" ? snapshot.roster.filter((p) => !["Bench", "IR"].includes(p.slot)) : optimizeLineup(snapshot.roster), [snapshot.roster, snapshot.scoreMode]);
+  useEffect(() => {
+    if (!autoSync) return;
+    fetch("/api/flaim/sync", { method: "POST" })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error ?? "No se pudo importar la liga desde Flaim.");
+        setSnapshot(body);
+        setSyncNotice("Flaim conectado. La liga y el análisis ya están actualizados.");
+      })
+      .catch((cause) => setError(cause instanceof Error ? cause.message : "No se pudo importar la liga desde Flaim."))
+      .finally(() => setSyncing(false));
+  }, [autoSync]);
+
+  const starters = useMemo(() => snapshot.freshness === "STALE" || snapshot.scoreMode === "actual" ? snapshot.roster.filter((p) => !["Bench", "IR"].includes(p.slot)) : optimizeLineup(snapshot.roster), [snapshot.roster, snapshot.scoreMode, snapshot.freshness]);
   const starterIds = useMemo(() => new Set(starters.map((p) => p.canonicalPlayerId)), [starters]);
   const bench = useMemo(() => snapshot.roster.filter((p) => p.slot !== "IR" && !starterIds.has(p.canonicalPlayerId)).map((p) => ({ ...p, slot: "Bench" })), [snapshot.roster, starterIds]);
 
   async function sync() {
     setSyncing(true); setError(null); setSyncNotice(null);
     try {
-      const response = await fetch("/api/sync", { method: "POST" });
+      const syncPath = flaimEnabled && flaimConnected ? "/api/flaim/sync" : "/api/sync";
+      const response = await fetch(syncPath, { method: "POST" });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "No se pudo sincronizar");
       setSnapshot(body);
@@ -40,11 +55,14 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">{snapshot.freshness !== "STALE" ? [snapshot.leagueName, snapshot.scoringLabel, snapshot.teamCount ? `${snapshot.teamCount} EQUIPOS` : undefined].filter(Boolean).join(" · ") : "LIGA PRIVADA · DATOS NO DISPONIBLES"}</p>
+          <p className="eyebrow">{snapshot.freshness !== "STALE" ? [snapshot.leagueName, snapshot.scoringLabel, snapshot.teamCount ? `${snapshot.teamCount} EQUIPOS` : undefined].filter(Boolean).join(" · ") : [snapshot.leagueName, `HISTÓRICO · ${snapshot.season} SEMANA ${snapshot.week}`].filter(Boolean).join(" · ")}</p>
           <h1>COMMAND <span>CENTER</span></h1>
         </div>
         <div className="sync-block">
           <div className={`health health-${snapshot.health.toLowerCase()}`}><i />{snapshot.health}</div>
+          {flaimEnabled && <a className={flaimConnected ? "connect-button connected" : "connect-button"} href="/api/flaim/connect">
+            {flaimConnected ? "Flaim conectado" : "Conectar Flaim"}
+          </a>}
           <button className="sync-button" onClick={sync} disabled={syncing}>
             <span className={syncing ? "spinner active" : "spinner"} />
             {syncing ? "Consultando fuentes…" : "Sincronizar"}
@@ -53,9 +71,9 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
       </header>
 
       <nav className="nav-tabs" aria-label="Secciones">
-        {(["command", "lineup", "actions", "system"] as View[]).map((item) => (
+        {(["command", "lineup", "available", "actions", "system"] as View[]).map((item) => (
           <button key={item} onClick={() => setView(item)} className={view === item ? "active" : ""}>
-            {item === "command" ? "Resumen" : item === "lineup" ? "Alineación" : item === "actions" ? "Acciones" : "Sistema"}
+            {item === "command" ? "Resumen" : item === "lineup" ? "Alineación" : item === "available" ? "Disponibles" : item === "actions" ? "Acciones" : "Sistema"}
           </button>
         ))}
       </nav>
@@ -72,6 +90,7 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
 
       {view === "command" && <CommandView snapshot={snapshot} />}
       {view === "lineup" && <LineupView starters={starters} bench={bench} historical={snapshot.freshness === "STALE"} />}
+      {view === "available" && <AvailablePlayersView players={snapshot.availablePlayers ?? []} fresh={snapshot.freshness !== "STALE"} season={snapshot.season} week={snapshot.week} />}
       {view === "actions" && <ActionsView snapshot={snapshot} />}
       {view === "system" && <SystemView snapshot={snapshot} />}
 
@@ -119,9 +138,9 @@ function CommandView({ snapshot }: { snapshot: SyncSnapshot }) {
 
 function LineupView({ starters, bench, historical }: { starters: SyncSnapshot["roster"]; bench: SyncSnapshot["roster"]; historical: boolean }) {
   return <section className="panel lineup-panel">
-    <div className="panel-head"><h2>Alineación {starters.some((p) => p.locked) ? "y puntos" : "óptima"}</h2><span>DATOS DE LIGA · {historical ? "HISTÓRICOS" : "FRESCOS"}</span></div>
+    <div className="panel-head"><h2>{historical ? "Alineación guardada" : `Alineación ${starters.some((p) => p.locked) ? "y puntos" : "óptima"}`}</h2><span>DATOS DE LIGA · {historical ? "HISTÓRICOS" : "FRESCOS"}</span></div>
     <div className="decision-note">Veredicto directo con piso estimado, mediana y techo. El piso es un percentil conservador, no puntos garantizados. Cada fila revela el factor oculto y los datos que faltan.</div>
-    <h3>Titulares recomendados</h3>
+    <h3>{historical ? "Titulares guardados" : "Titulares recomendados"}</h3>
     <div className="player-list"><DecisionHeader />{starters.length ? starters.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} starter />) : <Empty message="El roster actual se mostrará después de una sincronización de liga fresca." />}</div>
     <h3>Banca</h3>
     <div className="player-list"><DecisionHeader />{bench.length ? bench.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} starter={false} />) : <Empty message="Sin banca disponible." />}</div>
@@ -144,6 +163,51 @@ function ActionsView({ snapshot }: { snapshot: SyncSnapshot }) {
       return <div className="action-group" key={group.title}><h3>{group.title}</h3>{items.length ? <ExpandableActions items={items} initialCount={3} /> : <p>La plantilla actual no requiere una acción en esta categoría.</p>}</div>;
     })}</div>
   </section>;
+}
+
+function AvailablePlayersView({ players, fresh, season, week }: { players: NonNullable<SyncSnapshot["availablePlayers"]>; fresh: boolean; season: number; week: number }) {
+  const [filter, setFilter] = useState<"all" | "free_agent" | "waivers">("all");
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return players.filter((player) => {
+      const matchesFilter = filter === "all" || player.acquisitionState === filter;
+      const matchesQuery = !normalizedQuery || `${player.name} ${player.team} ${player.position}`.toLocaleLowerCase().includes(normalizedQuery);
+      return matchesFilter && matchesQuery;
+    });
+  }, [filter, players, query]);
+
+  return <section className="panel">
+    <div className="panel-head"><h2>Disponibles de la liga</h2><span>{fresh ? `${players.length} JUGADORES CONSULTADOS · MÁXIMO 100` : `HISTÓRICO · ${season} SEMANA ${week}`}</span></div>
+    {!fresh && <div className="warning" role="status"><strong>Lista guardada</strong> Estos jugadores pertenecían al snapshot de la semana {week}; no se confirmó su disponibilidad actual.</div>}
+    <div className="availability-toolbar">
+      <label>Buscar jugador
+        <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre, equipo o posición" />
+      </label>
+      <label>Situación
+        <select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}>
+          <option value="all">Todos</option>
+          <option value="free_agent">Agentes libres</option>
+          <option value="waivers">En waivers</option>
+        </select>
+      </label>
+      <span className="availability-count">Mostrando {filtered.length} de {players.length}</span>
+    </div>
+    {filtered.length ? <div className="available-player-list">
+      {filtered.map((player) => <article className="available-player" key={player.canonicalPlayerId}>
+        <div className="available-player-main"><strong>{player.name}</strong><small>{player.team} · {player.position}</small></div>
+        <span className={`availability-state ${player.acquisitionState ?? "unknown"}`}>{availabilityLabel(player.acquisitionState)}</span>
+        <small>{player.projection != null ? `${player.projection.toFixed(1)} pts proyectados` : "Proyección no disponible"}</small>
+        {player.waiverClearsAt && <small>Se libera: {formatMonterrey(player.waiverClearsAt)}</small>}
+      </article>)}
+    </div> : <Empty message={players.length ? "No hay resultados con esos filtros." : fresh ? "Flaim no devolvió jugadores disponibles en esta consulta." : "No hay una lista de disponibles guardada."} />}
+  </section>;
+}
+
+function availabilityLabel(state: SyncSnapshot["roster"][number]["acquisitionState"]) {
+  if (state === "free_agent") return "Agente libre";
+  if (state === "waivers") return "En waivers";
+  return "Disponible · estado no confirmado";
 }
 
 function SystemView({ snapshot }: { snapshot: SyncSnapshot }) {

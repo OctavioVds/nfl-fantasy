@@ -18,7 +18,7 @@ function validPassword(request: NextRequest, expected: string) {
 
 export function proxy(request: NextRequest) {
   if (process.env.NODE_ENV === "development") return NextResponse.next();
-  if (["/api/external-sync", "/api/cron/sync"].includes(request.nextUrl.pathname)) return NextResponse.next();
+  if (["/api/external-sync", "/api/cron/sync", "/api/flaim/callback", "/.well-known/oauth-client"].includes(request.nextUrl.pathname)) return NextResponse.next();
 
   const password = process.env.APP_ACCESS_PASSWORD;
   if (!password) {

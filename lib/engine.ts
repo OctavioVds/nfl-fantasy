@@ -258,6 +258,7 @@ export function playerValue(player: RosterPlayer, roster: RosterPlayer[]) {
 }
 
 export function waiverRecommendations(roster: RosterPlayer[], freeAgents: RosterPlayer[]): Recommendation[] {
+  const flaimMarketEnabled = process.env.FLAIM_MCP_SYNC_V1 === "1";
   // Protect players supported by at least two strong hold signals, while allowing
   // popular handcuffs with weak weekly and future value to be upgraded.
   const isHighValueHold = (p: RosterPlayer) => [
@@ -299,7 +300,7 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
   return selected.map(({ candidate, drop, net, confidenceScore }, index) => ({
       id: `add-${candidate.canonicalPlayerId}-drop-${drop.canonicalPlayerId}`,
       kind: "ADD" as const,
-      headline: `TOMA A ${candidate.name} · TIRA A ${drop.name}`,
+      headline: `${flaimMarketEnabled && candidate.acquisitionState === "waivers" ? "RECLAMA A" : "TOMA A"} ${candidate.name} · TIRA A ${drop.name}`,
       target: candidate.name,
       alternative: drop.name,
       confidence: confidenceScore >= 8 ? "HIGH" as const : confidenceScore >= 6 ? "MEDIUM" as const : "LOW" as const,
@@ -307,6 +308,16 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
       risk: "La disponibilidad y el papel pueden cambiar antes de procesar waivers; confirma noticias cercanas al cierre.",
       why: [
         { type: "FACT" as const, text: `${candidate.name} fue confirmado disponible por la fuente de la liga.` },
+        ...(flaimMarketEnabled && candidate.marketScope === "platform_global" && (candidate.percentOwned != null || candidate.percentStarted != null)
+          ? [{ type: "FACT" as const, text: `Mercado ESPN global: roster ${candidate.percentOwned == null ? "no informado" : candidate.percentOwned + "%"}, iniciado ${candidate.percentStarted == null ? "no informado" : candidate.percentStarted + "%"}; no representa solo esta liga.` }]
+          : flaimMarketEnabled && candidate.marketScope === "unavailable"
+            ? [{ type: "FACT" as const, text: "ESPN no entregó porcentajes de roster o titularidad para este jugador." }]
+            : []),
+        ...(flaimMarketEnabled && candidate.acquisitionState === "waivers"
+          ? [{ type: "FACT" as const, text: `Está sujeto a waivers${candidate.waiverClearsAt ? ` hasta ${candidate.waiverClearsAt}` : ""}; confirma el cierre antes de enviar la reclamación.` }]
+          : flaimMarketEnabled && candidate.acquisitionState === "free_agent"
+            ? [{ type: "FACT" as const, text: "ESPN confirmó que se puede agregar como agente libre en la consulta actual." }]
+            : []),
         { type: "FACT" as const, text: `${drop.name} está en tu roster, no está bloqueado y fue validado como opción de corte.` },
         { type: "MODEL" as const, text: `Ganancia de valor estimada sobre ${drop.name}: +${net}.` },
         ...(candidate.opportunityScore != null ? [{ type: "INFERENCE" as const, text: `Opportunity score normalizado: ${candidate.opportunityScore}/100.` }] : []),

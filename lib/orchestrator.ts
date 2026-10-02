@@ -142,7 +142,7 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     const agg = aggregateProjections(projections);
     const game = scheduleByTeam.get(p.team.toUpperCase());
     const kickoff = p.kickoff ?? sports?.kickoff ?? game?.kickoff;
-    const player: RosterPlayer = { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: "FA", projection: agg?.median ?? p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, floor: agg?.floor, ceiling: agg?.ceiling, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue, weather: game?.weather, windMph: game?.windMph, overUnder: game?.overUnder, spread: game?.spread, divisional: game?.divisional, shortWeek: game?.shortWeek, crossCountryTravel: game?.crossCountryTravel, opponentPointsAllowedL3: game?.opponent ? defenseAllowed.get(`${game.opponent}|${p.position}`) : undefined, locked: !kickoff || isPlayerLocked(kickoff), injury: p.injury ?? sports?.injury, recentGames: recentById.get(id), ...risksFor(p.team, game?.opponent) };
+    const player: RosterPlayer = { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: "FA", projection: agg?.median ?? p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, percentOwned: p.percentOwned, percentStarted: p.percentStarted, marketScope: p.marketScope, acquisitionState: p.acquisitionState, waiverClearsAt: p.waiverClearsAt, floor: agg?.floor, ceiling: agg?.ceiling, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue, weather: game?.weather, windMph: game?.windMph, overUnder: game?.overUnder, spread: game?.spread, divisional: game?.divisional, shortWeek: game?.shortWeek, crossCountryTravel: game?.crossCountryTravel, opponentPointsAllowedL3: game?.opponent ? defenseAllowed.get(`${game.opponent}|${p.position}`) : undefined, locked: !kickoff || isPlayerLocked(kickoff), injury: p.injury ?? sports?.injury, recentGames: recentById.get(id), ...risksFor(p.team, game?.opponent) };
     player.decisionProfile = buildDecisionProfile(player);
     player.projection = player.decisionProfile.median; player.floor = player.decisionProfile.floor; player.ceiling = player.decisionProfile.ceiling;
     return player;
@@ -158,7 +158,7 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     const agg = aggregateProjections(projections);
     const game = scheduleByTeam.get(p.team.toUpperCase());
     const kickoff = p.kickoff ?? sports?.kickoff ?? game?.kickoff;
-    const player: RosterPlayer = { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: p.slot, projection: agg?.median ?? p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, floor: agg?.floor, ceiling: agg?.ceiling, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue, weather: game?.weather, windMph: game?.windMph, overUnder: game?.overUnder, spread: game?.spread, divisional: game?.divisional, shortWeek: game?.shortWeek, crossCountryTravel: game?.crossCountryTravel, opponentPointsAllowedL3: game?.opponent ? defenseAllowed.get(`${game.opponent}|${p.position}`) : undefined, locked: !kickoff || isPlayerLocked(kickoff), injury: p.injury ?? sports?.injury, recentGames: recentById.get(id), ...risksFor(p.team, game?.opponent) };
+    const player: RosterPlayer = { canonicalPlayerId: id, name: p.name, team: p.team, position: p.position, slot: p.slot, projection: agg?.median ?? p.projection, futureProjection: p.futureProjection, opportunityScore: p.opportunityScore, depthOrder: p.depthOrder, percentOwned: p.percentOwned, percentStarted: p.percentStarted, marketScope: p.marketScope, acquisitionState: p.acquisitionState, waiverClearsAt: p.waiverClearsAt, floor: agg?.floor, ceiling: agg?.ceiling, kickoff, opponent: game?.opponent, homeAway: game?.homeAway, venue: game?.venue, weather: game?.weather, windMph: game?.windMph, overUnder: game?.overUnder, spread: game?.spread, divisional: game?.divisional, shortWeek: game?.shortWeek, crossCountryTravel: game?.crossCountryTravel, opponentPointsAllowedL3: game?.opponent ? defenseAllowed.get(`${game.opponent}|${p.position}`) : undefined, locked: !kickoff || isPlayerLocked(kickoff), injury: p.injury ?? sports?.injury, recentGames: recentById.get(id), ...risksFor(p.team, game?.opponent) };
     player.decisionProfile = buildDecisionProfile(player);
     player.projection = player.decisionProfile.median; player.floor = player.decisionProfile.floor; player.ceiling = player.decisionProfile.ceiling;
     return player;
@@ -190,13 +190,13 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
   const sources = buildSourceRefs(league, period, firstWave);
   const recommendationRows = [...waiverActions, ...lineupActions, ...tradeActions, ...rosterActions];
   const snapshot: SyncSnapshot = {
-    id: runId, syncRunId: runId, season: period.season, week: period.week,
-    leagueName: stale ? "Liga no conectada" : league.league.name,
+    id: runId, syncRunId: runId, season: stale ? league.league.season : period.season, week: stale ? league.league.week : period.week,
+    leagueName: league.league.name,
     generatedAt: started.toISOString(), dataAsOf: league.sourceTimestamp,
     dataUpdatedAt: league.sourceTimestamp, dataFetchedAt: league.fetchedAt,
     dataReceivedAt: started.toISOString(),
-    dataVersion: leagueDataVersion(league), teamCount: stale ? undefined : league.league.teamCount,
-    scoringLabel: stale ? undefined : scoringLabel(league),
+    dataVersion: leagueDataVersion(league), teamCount: league.league.teamCount,
+    scoringLabel: scoringLabel(league),
     freshness: stale ? "STALE" : failed.length ? "DEGRADED" : "FRESH",
     health: stale || failed.length ? "DEGRADED" : "HEALTHY",
     projectedScore: stale || projectedScore == null ? null : Math.round(projectedScore * 10) / 10,
@@ -205,7 +205,8 @@ export async function synchronize(external?: ExternalSyncPayload): Promise<SyncS
     scoreMode: stale ? undefined : showingActual ? "actual" : "projection",
     teamRecord: stale ? undefined : league.teamRecord,
     opponentName: stale ? undefined : activeOpponent?.name,
-    roster: stale ? [] : roster,
+    roster,
+    availablePlayers: freeAgents,
     recommendations: stale ? [] : recommendationRows
       .sort((a, b) => {
         const category = (kind: string) => ["ADD", "DROP", "STREAM"].includes(kind) ? 1 : ["START", "SIT"].includes(kind) ? 2 : kind === "TRADE" ? 3 : 4;

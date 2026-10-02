@@ -12,6 +12,11 @@ export const externalPlayerSchema = z.object({
   depthOrder: z.number().int().min(1).max(20).optional(),
   kickoff: z.string().datetime().optional(),
   injury: z.string().max(32).optional(),
+  percentOwned: z.number().finite().min(0).max(100).nullable().optional(),
+  percentStarted: z.number().finite().min(0).max(100).nullable().optional(),
+  marketScope: z.enum(["platform_global", "unavailable"]).optional(),
+  acquisitionState: z.enum(["free_agent", "waivers"]).nullable().optional(),
+  waiverClearsAt: z.string().datetime().optional(),
 });
 
 export const externalSyncSchema = z.object({
