@@ -29,11 +29,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<Rec
             ? "Flaim no publicó los metadatos OAuth necesarios para iniciar la conexión."
             : flaimError === "pkce_unavailable"
               ? "Flaim no ofrece PKCE S256; la conexión se detuvo por seguridad."
-              : flaimError === "oauth_setup_failed"
-                ? "No se pudo iniciar la conexión OAuth de Flaim. Revisa los logs de Vercel para el código de falla."
-                : query.flaim_sync === "error"
-                  ? "Flaim quedó conectado, pero no se pudo importar el roster. Pulsa Sincronizar para reintentar."
-                  : null;
+              : flaimError === "read_scope_unavailable"
+                ? "Flaim no ofrece el permiso de solo lectura que esta app requiere. No se solicitó acceso de escritura."
+                : flaimError === "oauth_setup_failed"
+                  ? "No se pudo iniciar la conexión OAuth de Flaim. Revisa los logs de Vercel para el código de falla."
+                  : query.flaim_sync === "error"
+                    ? "Flaim quedó conectado, pero no se pudo importar el roster. Pulsa Sincronizar para reintentar."
+                    : null;
   const autoSync = flaimState === "connected" || query.flaim_sync === "1";
   const initialNotice = flaimState === "connected" ? "Flaim autorizado; importando la liga y calculando decisiones…" : null;
   return <CommandCenter initialSnapshot={snapshot} flaimEnabled={flaimEnabled} initialFlaimConnected={flaimConnected} autoSync={autoSync} initialError={initialError} initialNotice={initialNotice} />;

@@ -10,6 +10,7 @@ export type FlaimOAuthFailureCode =
   | "client_registration_unavailable"
   | "client_registration_failed"
   | "redirect_uri_rejected"
+  | "read_scope_unavailable"
   | "oauth_setup_failed";
 
 export class FlaimOAuthSetupError extends Error {
@@ -21,6 +22,12 @@ export class FlaimOAuthSetupError extends Error {
 
 export function classifyRegistrationFailure(providerCode: unknown): FlaimOAuthFailureCode {
   return providerCode === "invalid_redirect_uri" ? "redirect_uri_rejected" : "client_registration_failed";
+}
+
+export function flaimReadOnlyScope(supportedScopes: unknown, challengeScope?: string) {
+  const supported = Array.isArray(supportedScopes) ? supportedScopes.filter((scope): scope is string => typeof scope === "string") : [];
+  const challenged = challengeScope?.split(/\s+/).filter(Boolean) ?? [];
+  return [...supported, ...challenged].includes("mcp:read") ? "mcp:read" : undefined;
 }
 
 type OAuthMetadata = JsonRecord & {
@@ -148,7 +155,9 @@ async function resourceMetadata() {
     try {
       const metadata = await jsonRequest(candidate);
       const servers = Array.isArray(metadata.authorization_servers) ? metadata.authorization_servers : [];
-      if (servers.length && typeof servers[0] === "string") return { metadata, issuer: flaimUrl(servers[0]), scope: challenge.scope };
+      if (servers.length && typeof servers[0] === "string") {
+        return { metadata, issuer: flaimUrl(servers[0]), scope: flaimReadOnlyScope(metadata.scopes_supported, challenge.scope) };
+      }
     } catch {
       // Try the next discovery location.
     }
@@ -216,6 +225,9 @@ export async function createAuthorizationTransaction(requestOrigin: string) {
   const redirectUri = origin + "/api/flaim/callback";
   const resource = FLAIM_MCP_URL;
   const discoveredResource = await resourceMetadata();
+  if (discoveredResource.scope !== "mcp:read") {
+    throw new FlaimOAuthSetupError("read_scope_unavailable", "Flaim no ofrece un permiso de solo lectura para esta conexión.");
+  }
   const auth = await authorizationMetadata(discoveredResource.issuer);
   if (!auth.code_challenge_methods_supported?.includes("S256")) {
     throw new FlaimOAuthSetupError("pkce_unavailable", "Flaim no ofrece PKCE S256, que se requiere para proteger el acceso.");

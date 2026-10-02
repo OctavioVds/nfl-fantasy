@@ -12,7 +12,7 @@ Updated: 2026-10-02 (America/Monterrey)
 
 | Rama | Chat / dueño | Archivos nuevos / tocados | Migración reservada | Flag | Estado | Última actualización |
 |---|---|---|---|---|---|---|
-| `feat/flaim-live-sync` | Codex: conexión OAuth/MCP Flaim | `lib/flaim/*`, `app/api/flaim/*`, `app/.well-known/oauth-client/route.ts`, UI, proxy, cron, README, `docs/COORDINATION.md` | `003_flaim_oauth.sql`; solo en la rama, no aplicada | `FLAIM_MCP_SYNC_V1` (solo Preview) | PR borrador #4; Preview Ready; DCR devuelve `invalid_redirect_uri` para el callback del Preview. Código actualizado para exponer la causa, evitar fallback a snapshot vencido y aceptar client ID autorizado. Falta autorización del callback y consentimiento OAuth del usuario | 2026-10-02 |
+| `feat/flaim-live-sync` | Codex: conexión OAuth/MCP Flaim | `lib/flaim/*`, `app/api/flaim/*`, `app/.well-known/oauth-client/route.ts`, UI, proxy, cron, README, `docs/COORDINATION.md` | `003_flaim_oauth.sql`; solo en la rama, no aplicada | `FLAIM_MCP_SYNC_V1` (solo Preview) | PR borrador #4; Preview Ready; DCR devuelve `invalid_redirect_uri` para el callback del Preview. Código actualizado para exponer la causa, evitar fallback a snapshot vencido, aceptar client ID autorizado y pedir solo `mcp:read`. Falta autorización del callback y consentimiento OAuth del usuario | 2026-10-02 |
 
 ## Auditoría de coordinación — 2026-10-01
 
@@ -49,5 +49,5 @@ Updated: 2026-10-02 (America/Monterrey)
 - El metadato público de Flaim publica `/auth/register` y PKCE S256. Una solicitud de registro para el Preview respondió HTTP 400 `invalid_redirect_uri` con callback `https://q-git-feat-flaim-live-sync-octaviovds-projects.vercel.app/api/flaim/callback`; no se creó un cliente ni se concedió acceso a la liga.
 - Los logs de Vercel muestran `GET /api/flaim/connect` con redirección 307 y `flaim_oauth_start_failed`; no hay petición al callback. El código previo ocultaba el error del proveedor y mostraba el mismo mensaje para todas las fallas.
 - El arreglo ahora conserva el código de error seguro para la UI y los logs; Sincronizar falla cerrado con un mensaje de conexión pendiente en vez de recalcular el snapshot vencido cuando Flaim no está conectado.
-- Se añadió soporte server-side para un client ID/secret autorizado manualmente; no se añadieron credenciales ni se modificaron datos de producción.
-- Verificación local: lint, typecheck, build y 66 pruebas pasan. El bloqueo externo restante es que Flaim autorice el callback del Preview o emita un client ID para ese callback, seguido del consentimiento OAuth del usuario y una sincronización real.
+- Se añadió soporte server-side para un client ID/secret autorizado manualmente y el flujo solicita únicamente `mcp:read`; no se añadieron credenciales ni se modificaron datos de producción.
+- Verificación local: lint, typecheck, build y 67 pruebas pasan. El bloqueo externo restante es que Flaim autorice el callback del Preview o emita un client ID para ese callback, seguido del consentimiento OAuth del usuario y una sincronización real.
