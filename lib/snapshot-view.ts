@@ -14,14 +14,14 @@ export function snapshotForDisplay(snapshot: SyncSnapshot, now = new Date()): Sy
     ...snapshot.warnings,
     ...(outOfPeriod ? [`El snapshot es de ${snapshot.season} semana ${snapshot.week}; el periodo actual es ${period.season} semana ${period.week}.`] : []),
     ...(!sourceTimestamp ? ["No existe timestamp de una fuente de liga actual."] : isStale(sourceTimestamp, LEAGUE_DATA_TTL_MS, now) ? ["La última consulta de liga supera 24 horas o tiene un timestamp inválido."] : []),
-    "Se ocultaron roster, rival y decisiones porque este snapshot no representa datos frescos de la semana actual.",
+    "Se conservaron los datos reales del último snapshot como históricos; las recomendaciones y acciones actuales están bloqueadas.",
   ];
 
   return {
     ...snapshot,
     season: period.season,
     week: period.week,
-    leagueName: "Liga no conectada",
+    leagueName: snapshot.leagueName || "Liga no conectada",
     freshness: "STALE",
     health: "DEGRADED",
     projectedScore: null,
@@ -30,7 +30,7 @@ export function snapshotForDisplay(snapshot: SyncSnapshot, now = new Date()): Sy
     scoreMode: undefined,
     teamRecord: undefined,
     opponentName: undefined,
-    roster: [],
+    roster: snapshot.roster,
     recommendations: [],
     pendingMoves: undefined,
     rosterChanges: undefined,

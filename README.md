@@ -22,9 +22,9 @@ npm run build
 
 ## Ingesta de liga
 
-`POST /api/external-sync` es el adaptador autenticado para enviar el snapshot actual obtenido desde Flaim u otra integración autorizada. Requiere `Authorization: Bearer <EXTERNAL_SYNC_SECRET>`. El payload incluye `league`, `roster`, `freeAgents`, `source` y `sourceTimestamp`; los timestamps deben ser ISO-8601. Un snapshot válido reemplaza por completo el estado de liga del mismo proveedor, liga y temporada. El hash del contenido permite identificar cambios.
+`POST /api/external-sync` es el adaptador autenticado para enviar el snapshot actual obtenido desde Flaim u otra integración autorizada. Requiere `Authorization: Bearer <EXTERNAL_SYNC_SECRET>`. El payload incluye `league`, `roster`, `freeAgents`, `source` y `sourceTimestamp`; los timestamps deben ser ISO-8601. Un snapshot válido reemplaza por completo el estado de liga del mismo proveedor, liga y temporada. El hash del contenido permite identificar cambios. Esta ruta recibe los datos de liga; `/api/sync` solo recalcula el último snapshot y no consulta ESPN por sí sola.
 
-`/api/flaim/connect` inicia la autorización OAuth de Flaim con PKCE. Después de autorizar una vez, `POST /api/flaim/sync` consulta por MCP tu liga ESPN, roster, disponibles y matchup; el botón Sincronizar usa esa ruta. `/api/cron/sync` repite la consulta diariamente cuando hay una conexión activa. Si Flaim deja de autorizar o no hay conexión, la app conserva el último snapshot y lo marca como viejo.
+`/api/flaim/connect` inicia la autorización OAuth de Flaim con PKCE. Después de autorizar una vez, `POST /api/flaim/sync` consulta por MCP tu liga ESPN, roster, disponibles y matchup; el botón Sincronizar usa esa ruta cuando Flaim está conectado. Sin conexión Flaim, Sincronizar usa el camino anterior y recalcula el último snapshot recibido por `/api/external-sync`. `/api/cron/sync` consulta Flaim diariamente cuando hay conexión activa; si falla, recalcula el último snapshot disponible.
 
 ### Conectar la liga
 
@@ -33,7 +33,7 @@ npm run build
 3. Inicia sesión en Flaim con la cuenta que ya tiene conectada ESPN y acepta el acceso de solo lectura.
 4. Regresarás a la app; importará el roster y hasta 100 jugadores disponibles, y calculará las decisiones automáticamente. La pestaña **Disponibles** separa agentes libres de jugadores en waivers. Para una actualización posterior, pulsa **Sincronizar**.
 
-Si la autorización muestra `invalid_redirect_uri`, Flaim rechazó la URL `/api/flaim/callback` del dominio del Preview. Flaim debe autorizar ese callback OAuth antes de poder conectar la app. Si entrega un client ID y secreto de cliente, se configuran server-side como `FLAIM_OAUTH_CLIENT_ID` y `FLAIM_OAUTH_CLIENT_SECRET`; nunca se guardan en el cliente ni en el repositorio.
+Si la autorización muestra `invalid_redirect_uri`, Flaim rechazó la URL `/api/flaim/callback` del dominio del Preview. Flaim debe autorizar ese callback OAuth antes de poder conectar la app. Si entrega un client ID y secreto de cliente, se configuran server-side como `FLAIM_OAUTH_CLIENT_ID` y `FLAIM_OAUTH_CLIENT_SECRET`; nunca se guardan en el cliente ni en el repositorio. Mientras tanto, el roster y la lista guardados se muestran como históricos; las acciones actuales permanecen bloqueadas.
 
 `POST /api/sync` recalcula el último snapshot y consulta los proveedores NFL configurados. `Promise.allSettled` conserva resultados de proveedores sanos cuando otro falla.
 

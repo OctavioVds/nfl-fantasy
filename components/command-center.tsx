@@ -36,10 +36,8 @@ export function CommandCenter({ initialSnapshot, flaimEnabled, initialFlaimConne
   async function sync() {
     setSyncing(true); setError(null); setSyncNotice(null);
     try {
-      if (flaimEnabled && !flaimConnected) {
-        throw new Error("Flaim aún no está conectado. Pulsa Conectar Flaim; no se consultó ni se presentó el snapshot vencido como si fuera nuevo.");
-      }
-      const response = await fetch(flaimEnabled ? "/api/flaim/sync" : "/api/sync", { method: "POST" });
+      const syncPath = flaimEnabled && flaimConnected ? "/api/flaim/sync" : "/api/sync";
+      const response = await fetch(syncPath, { method: "POST" });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "No se pudo sincronizar");
       setSnapshot(body);
@@ -92,7 +90,7 @@ export function CommandCenter({ initialSnapshot, flaimEnabled, initialFlaimConne
 
       {view === "command" && <CommandView snapshot={snapshot} />}
       {view === "lineup" && <LineupView starters={starters} bench={bench} historical={snapshot.freshness === "STALE"} />}
-      {view === "available" && <AvailablePlayersView players={snapshot.availablePlayers ?? []} fresh={snapshot.freshness !== "STALE"} />}
+      {view === "available" && <AvailablePlayersView players={snapshot.availablePlayers ?? []} fresh={snapshot.freshness !== "STALE"} season={snapshot.season} week={snapshot.week} />}
       {view === "actions" && <ActionsView snapshot={snapshot} />}
       {view === "system" && <SystemView snapshot={snapshot} />}
 
@@ -167,7 +165,7 @@ function ActionsView({ snapshot }: { snapshot: SyncSnapshot }) {
   </section>;
 }
 
-function AvailablePlayersView({ players, fresh }: { players: NonNullable<SyncSnapshot["availablePlayers"]>; fresh: boolean }) {
+function AvailablePlayersView({ players, fresh, season, week }: { players: NonNullable<SyncSnapshot["availablePlayers"]>; fresh: boolean; season: number; week: number }) {
   const [filter, setFilter] = useState<"all" | "free_agent" | "waivers">("all");
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => {
@@ -179,10 +177,9 @@ function AvailablePlayersView({ players, fresh }: { players: NonNullable<SyncSna
     });
   }, [filter, players, query]);
 
-  if (!fresh) return <section className="panel"><div className="panel-head"><h2>Disponibles de la liga</h2><span>ESPERANDO SNAPSHOT FRESCO</span></div><Empty message="Conecta Flaim y sincroniza para consultar agentes libres y waivers actuales." /></section>;
-
   return <section className="panel">
-    <div className="panel-head"><h2>Disponibles de la liga</h2><span>{players.length} JUGADORES CONSULTADOS · MÁXIMO 100</span></div>
+    <div className="panel-head"><h2>Disponibles de la liga</h2><span>{fresh ? `${players.length} JUGADORES CONSULTADOS · MÁXIMO 100` : `HISTÓRICO · ${season} SEMANA ${week}`}</span></div>
+    {!fresh && <div className="warning" role="status"><strong>Lista guardada</strong> Estos jugadores pertenecían al snapshot de la semana {week}; no se confirmó su disponibilidad actual.</div>}
     <div className="availability-toolbar">
       <label>Buscar jugador
         <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nombre, equipo o posición" />
@@ -203,7 +200,7 @@ function AvailablePlayersView({ players, fresh }: { players: NonNullable<SyncSna
         <small>{player.projection != null ? `${player.projection.toFixed(1)} pts proyectados` : "Proyección no disponible"}</small>
         {player.waiverClearsAt && <small>Se libera: {formatMonterrey(player.waiverClearsAt)}</small>}
       </article>)}
-    </div> : <Empty message={players.length ? "No hay resultados con esos filtros." : "Flaim no devolvió jugadores disponibles en esta consulta."} />}
+    </div> : <Empty message={players.length ? "No hay resultados con esos filtros." : fresh ? "Flaim no devolvió jugadores disponibles en esta consulta." : "No hay una lista de disponibles guardada."} />}
   </section>;
 }
 
