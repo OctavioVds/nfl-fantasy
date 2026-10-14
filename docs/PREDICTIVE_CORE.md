@@ -40,7 +40,7 @@ USE_PREDICTIVE_CORE=false fuerza legado. Undefined/true considera artefactos ún
 
 ## Cadencia y costos
 
-vercel.json mantiene un cron diario por ruta: sync14:30UTC y core14:35UTC (08:30/08:35 Monterrey). El plan real debe comprobarse en la cuenta; Hobby permite frecuencia diaria y no garantiza minuto exacto. Por ese motivo no se garantiza orden entre dos jobs: core también comprueba la versión de los inputs y sigue bloqueado hasta que llega la ingesta. La revisión del chat a08:30 ya existente es distinta a estos jobs y requiere el equipo/app disponibles. Jobs de Vercel no ejecutan el plugin Flaim del chat.
+vercel.json mantiene un cron diario por ruta: sync14:30UTC y core14:35UTC (08:30/08:35 Monterrey). El plan real Hobby se confirmó mediante APIteam14oct; permite frecuencia diaria y no garantiza minuto exacto. Por ese motivo no se garantiza orden entre dos jobs: core también comprueba la versión de los inputs y sigue bloqueado hasta que llega la ingesta. La revisión del chat a08:30 ya existente es distinta a estos jobs y requiere el equipo/app disponibles. Jobs de Vercel no ejecutan el plugin Flaim del chat.
 
 GitHub Actions semanal martes20:00UTC entrena offline. Necesita ejemplos privados auditados, repository variable CORE_TRAINING_ENABLED=true y secrets NEON_TRAINING_DATABASE_URL/CORE_TRAINING_CONFIG_JSON. No publica datasets/artefactos privados. No se habilitó entrenamiento facturable con datos vacíos. Inferencia ligera solamente en Vercel. [Límites de cron](https://vercel.com/docs/cron-jobs/usage-and-pricing), [funciones](https://vercel.com/docs/functions/limitations).
 

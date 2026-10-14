@@ -2,12 +2,13 @@ import { serverEnv } from "../env";
 import type { RosterPlayer } from "../types";
 import { getCoreRun } from "./store";
 import { validDistribution } from "./projection";
+import { coreRunFresh } from "./service";
 
 export async function applyCoreProjections(players: RosterPlayer[], context: { scope: string; season: number; week: number; dataAsOf: string }): Promise<RosterPlayer[]> {
   if (serverEnv().USE_PREDICTIVE_CORE === "false") return players;
   let run;
   try { run = await getCoreRun(context.scope); } catch { return players; }
-  if (!run?.gate.accepted || run.season !== context.season || run.week !== context.week || run.source_as_of !== context.dataAsOf || Date.now() - Date.parse(run.source_as_of) > 24 * 3600000) return players;
+  if (!run?.gate.accepted || run.season !== context.season || run.week !== context.week || run.source_as_of !== context.dataAsOf || !coreRunFresh(run)) return players;
   const byId = new Map(run.projections.filter((projection) => projection.scenario === "base").map((projection) => [projection.player_id, projection]));
   return players.map((player) => {
     const projection = byId.get(player.canonicalPlayerId);

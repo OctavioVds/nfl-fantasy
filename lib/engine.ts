@@ -134,7 +134,10 @@ export function buildDecisionProfile(player: RosterPlayer): PlayerDecisionProfil
 }
 
 export function lineupDecisionScore(player: RosterPlayer) {
-  if (player.coreProjection?.eligible && player.coreProjection.mean != null) return player.coreProjection.mean;
+  if (player.coreProjection?.eligible && player.coreProjection.mean != null) {
+    if (player.coreProjection.prob_play === 0 || /^(IR|O|OUT|INACTIVE|PUP|SUSPENDED|SUSP)$/i.test(player.injury ?? "")) return Number.NEGATIVE_INFINITY;
+    return player.coreProjection.mean;
+  }
   const projection = player.decisionProfile?.median ?? player.projection ?? 0;
   const floorAdjustment = player.decisionProfile ? (player.decisionProfile.floor - projection) * 0.2 : 0;
   const opportunity = player.opportunityScore == null ? 0 : Math.max(-1, Math.min(1, (player.opportunityScore - 70) / 25));
