@@ -40,4 +40,6 @@ Las páginas y el sync manual exigen `APP_ACCESS_PASSWORD` fuera de desarrollo. 
 
 ## Alcance actual
 
+Predictive Core: [arquitectura y datos pendientes](docs/PREDICTIVE_CORE.md), [auditoría previa](docs/AUDIT_PRE_CORE.md), [verificación](docs/VERIFICATION.md), [entrenamiento offline](scripts/core/README.md). Migración003 agrega feature store, escenarios, distribuciones, registry/backtest y calidad. La pestaña Predicciones muestra datos verificables; el modelo solo sustituye el legado después de superar ESPN en validación temporal real.
+
 Funcionan el orquestador determinístico, fallos parciales aislados, protección contra snapshots viejos, locks conservadores cuando falta kickoff, estado por proveedor, diff de roster por ID del proveedor, ingesta externa protegida, persistencia Neon opcional y UI responsive. Los joins entre IDs de proveedores distintos requieren filas explícitas en `player_id_map`; sin ellas se excluyen del cruce en vez de empatar por nombre. No se afirma consulta en vivo de la liga: el bridge de ingesta necesita un proveedor conectado fuera del botón Sync.

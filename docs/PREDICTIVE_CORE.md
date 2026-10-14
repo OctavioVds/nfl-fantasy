@@ -30,6 +30,8 @@ La pestaña Predicciones incluye ficha/distribución, escenarios, vacancias, ale
 
 ## Entrenamiento y aceptación
 
+El catálogo compartido `lib/core/feature-catalog.json` tiene146variables versionadas. Python y TS rechazan nombres/bloques desconocidos; no se aprueba un modelo que dependa de una variable no compatible con inferencia. Esto describe variables admitidas, no146fuentes contratadas ni146datos presentes. Contratos importados con fuente/as_of/fetched_at se distinguen de métricas faltantes.
+
 Python/scripts y comandos completos en [scripts/core/README.md](../scripts/core/README.md). Train → ajuste de ensamble → intervalos/bias → test, ventanas independientes cronológicas, scaler/imputer solo train, labels disponibles antes del partido objetivo. Semilla42 y cutoffs/hash/version registrados. Ablation reentrena y recalibra en las mismas ventanas. ESPN se compara sobre las mismas filas pregame, no sobre estimaciones propias guardadas bajo su nombre.
 
 No se añadió boosting sin demostrar mejora. El primer Ridge es interpretable; no se afirma una jerarquía completa de modelos por volumen/eficiencia sin datasets suficientes. Prob_play entrenada y modelos especiales de QB, coberturas y trincheras siguen null hasta contar con historial fiable. Los fixtures nunca abren el gate.

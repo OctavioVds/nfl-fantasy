@@ -1,0 +1,76 @@
+name: Predictive Core offline training
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Tuesday after the last weekly game; UTC. Training stays offline from Vercel.
+    - cron: '0 20 * * 2'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-training-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  verify-trainer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/core/requirements.txt
+      - name: Install pinned dependencies
+        run: python -m pip install --no-input --disable-pip-version-check -r scripts/core/requirements.txt
+      - name: Verify temporal leakage, scoring and fixture gate
+        run: python -m unittest discover -s scripts/core -p 'test_*.py' -v
+
+  train-private-data:
+    needs: verify-trainer
+    # Configuration is explicit. This workflow never receives secrets from pull requests.
+    if: github.ref == 'refs/heads/main' && vars.CORE_TRAINING_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.NEON_TRAINING_DATABASE_URL }}
+      CORE_TRAINING_CONFIG_JSON: ${{ secrets.CORE_TRAINING_CONFIG_JSON }}
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Check private configuration without printing it
+        id: configuration
+        shell: bash
+        run: |
+          if [[ -n "${DATABASE_URL}" && -n "${CORE_TRAINING_CONFIG_JSON}" ]]; then
+            echo 'ready=true' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'Training skipped: private Neon/config secrets are not configured.'
+            echo 'ready=false' >> "${GITHUB_OUTPUT}"
+          fi
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        if: steps.configuration.outputs.ready == 'true'
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/core/requirements.txt
+      - name: Install pinned dependencies
+        if: steps.configuration.outputs.ready == 'true'
+        run: python -m pip install --no-input --disable-pip-version-check -r scripts/core/requirements.txt
+      - name: Read audited examples and persist immutable model/backtest rows
+        if: steps.configuration.outputs.ready == 'true'
+        run: python scripts/core/train.py --from-neon --config-env --write-neon --output "${RUNNER_TEMP}/core-artifact.json"
+      # No artifact upload: model metadata and all historical player examples stay private in Neon.
