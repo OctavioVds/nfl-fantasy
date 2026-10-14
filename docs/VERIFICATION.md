@@ -20,6 +20,12 @@ Main actuals0/accuracy_metrics0/projections_by_source0; sin scoring canónico co
 
 ## Despliegue
 
-Proyecto Vercelq confirmado mediante CLI oficial; MCP devuelve403 de scope. Main original tiene despliegue Ready pero runtime privado401 sin password. Credenciales sensibles de producción no exportables; se conservan. Secrets de verificación y DATABASE_URL configurados solo para rama feat/predictive-core. Preview remoto y resultado final se añadirán al comprobarlos.
+Proyecto Vercelq confirmado mediante CLI oficial; MCP devuelve403 de scope. Credenciales sensibles de producción no exportables; se conservan. Secrets de verificación y DATABASE_URL configurados solo para rama feat/predictive-core.
+
+PR[5](https://github.com/OctavioVds/nfl-fantasy/pull/5), draft, rama feat/predictive-core; commits de auditoría13f3550, inferencia483dd03 y trainer3610ebe. El conector GitHub403 para crearPR se resolvió con la sesión local de Git Credential Manager sin imprimir tokens.
+
+Preview del commit3610ebe [Ready](https://q-ayxbjz2eo-octaviovds-projects.vercel.app): página con Basic200, sin Basic401; status200/BLOCKED/gatefalse/0proyecciones; backtest200/metricsnull; week19 y team ausente400; Bearerincorrecto401; cronsinsecret401 y consecret200. Dos POSTautorizados200 devolvieron el mismo ID82a00f6feb0d. No se exponen cuerpos privados de respuesta en este reporte.
+
+Después del preview, migración003 aplicada transaccionalmente en Neonmain (19statements más registro de versión), sin errores ni modificaciones de tablas previas. Se corrigió `.vercelignore` para excluir todos los archivos `.env*` salvo ejemplo y verificó con deploy--dry que el paquete nuevo excluye configuraciones privadas. El primer intento CLI contenía envfiles locales dentro del paquete privado de Vercel; no se subieron al GitHub público ni hay evidencia de exposición a clientes. La publicación corregida se documenta al terminar.
 
 El preview precede a cualquier publicación en producción. No se declara entrenamiento, conexión ESPN automática, minuto exacto de cron Hobby ni precisión que no se haya medido.
