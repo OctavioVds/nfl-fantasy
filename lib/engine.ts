@@ -135,7 +135,7 @@ export function buildDecisionProfile(player: RosterPlayer): PlayerDecisionProfil
 
 export function lineupDecisionScore(player: RosterPlayer) {
   if (player.coreProjection?.eligible && player.coreProjection.mean != null) {
-    if (player.coreProjection.prob_play === 0 || /^(IR|O|OUT|INACTIVE|PUP|SUSPENDED|SUSP)$/i.test(player.injury ?? "")) return Number.NEGATIVE_INFINITY;
+    if (!player.locked && (player.coreProjection.prob_play === 0 || /^(IR|O|OUT|INACTIVE|PUP|SUSPENDED|SUSP)$/i.test(player.injury ?? ""))) return Number.NEGATIVE_INFINITY;
     return player.coreProjection.mean;
   }
   const projection = player.decisionProfile?.median ?? player.projection ?? 0;
@@ -205,7 +205,7 @@ export function topLineupRecommendations(players: RosterPlayer[]): Recommendatio
     removed.splice(removed.indexOf(replacement), 1);
     const delta = round((starter.decisionProfile?.median ?? starter.projection ?? 0) - (replacement.decisionProfile?.median ?? replacement.projection ?? 0));
     const safetyDelta = round(lineupDecisionScore(starter) - lineupDecisionScore(replacement));
-    const unavailable = /^(IR|O|OUT|INACTIVE)$/i.test(replacement.injury ?? "");
+    const unavailable = replacement.coreProjection?.prob_play === 0 || /^(IR|O|OUT|INACTIVE|PUP|SUSPENDED|SUSP)$/i.test(replacement.injury ?? "");
     moves.push({
       id: `start-${starter.canonicalPlayerId}`,
       kind: "START",
@@ -220,8 +220,8 @@ export function topLineupRecommendations(players: RosterPlayer[]): Recommendatio
       risk: "Las proyecciones son estimaciones; noticias tardías pueden cambiar el papel.",
       why: [
         { type: "FACT", text: `${starter.name} está en tu banca y ${replacement.name} aparece actualmente como titular.` },
-        { type: "MODEL", text: `Diferencia de proyección estimada: ${delta >= 0 ? "+" : ""}${delta} puntos; diferencia ajustada por seguridad: ${safetyDelta >= 0 ? "+" : ""}${safetyDelta}.` },
-        ...(unavailable ? [{ type: "FACT" as const, text: `${replacement.name} figura no disponible (${replacement.injury}); una proyección cruda mayor no justifica mantenerlo.` }] : []),
+        { type: "MODEL", text: `Diferencia de proyección estimada: ${delta >= 0 ? "+" : ""}${delta} puntos; ${Number.isFinite(safetyDelta) ? `diferencia ajustada por seguridad: ${safetyDelta >= 0 ? "+" : ""}${safetyDelta}` : "sustitución necesaria por jugador no disponible"}.` },
+        ...(unavailable ? [{ type: "FACT" as const, text: `${replacement.name} figura no disponible (${replacement.injury ?? "disponibilidad o bye confirmado"}); una proyección cruda mayor no justifica mantenerlo.` }] : []),
         { type: "MODEL", text: `Aplica la alineación conjunta: ${lineupChanges.map((change) => `${change.name}: ${change.fromSlot} → ${change.toSlot}`).join("; ")}.` },
         { type: "INFERENCE", text: `Factor decisivo: ${starter.decisionProfile?.hiddenFactor ?? `supera el umbral conservador de ${LINEUP_SWAP_THRESHOLD} puntos`}.` },
       ],

@@ -175,7 +175,16 @@ describe("audited decision regressions", () => {
   it("never ranks a verified OUT or bye above a playable negative forecast", () => {
     const core: NonNullable<RosterPlayer["coreProjection"]> = {player_id:"test:out",season:2026,week:6,scenario:"base",mean:0,sd:0,p10:0,p50:0,p90:0,prob_play:0,confidence:100,drivers:[],model_version:null,scoring_hash:"fixture",as_of:"2026-10-14T15:00:00Z",fetched_at:"2026-10-14T15:00:00Z",estimated:false,method:"Verified unavailable",reason:"Unavailable",missing:[],eligible:true,ros_mean:null,ros_sd:null,playoff_mean:null,war:null};
     const active = p("active", "QB", -2, "Bench", {coreProjection:{...core,player_id:"test:active",mean:-2,p10:-4,p50:-2,p90:0,sd:2,prob_play:1}});
-    for (const unavailable of [p("out","QB",0,"QB",{injury:"OUT",coreProjection:core}),p("bye","QB",0,"QB",{coreProjection:core})]) expect(lineupDecisionScore(unavailable)).toBeLessThan(lineupDecisionScore(active));
+    for (const unavailable of [p("out","QB",0,"QB",{injury:"OUT",coreProjection:core}),p("bye","QB",0,"QB",{coreProjection:core})]) {
+      expect(lineupDecisionScore(unavailable)).toBeLessThan(lineupDecisionScore(active));
+      const roster = [...starters().filter((row) => row.position !== "QB"), unavailable, active];
+      const moves = topLineupRecommendations(roster);
+      expect(moves).toHaveLength(1);
+      expect(JSON.stringify(moves)).not.toMatch(/Infinity|NaN/);
+      expect(moves[0].why).toContainEqual(expect.objectContaining({text:expect.stringContaining("sustitución necesaria")}));
+      expect(lineupDecisionScore({...unavailable,locked:true})).toBe(0);
+      expect(optimizeLineup(roster.map((row) => row.canonicalPlayerId===unavailable.canonicalPlayerId?{...row,locked:true}:row))).toHaveLength(9);
+    }
   });
 
   it("recommends a healthy replacement for OUT despite lower raw projection", () => {
