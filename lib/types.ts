@@ -18,10 +18,15 @@ export interface PlayerProjection {
   team: string;
   position: string;
   source: string;
+  providerPlayerId?: string;
   points: number;
   floor?: number;
   ceiling?: number;
   sourceTimestamp?: string;
+  fetchedAt?: string;
+  sourceTimestampReason?: string;
+  scoring?: Record<string, number> | null;
+  scoringLabel?: string;
 }
 
 export interface RecentGameUsage {
@@ -59,6 +64,12 @@ export interface PlayerDecisionProfile {
   gameScript: string;
   hiddenFactor: string;
   missing: string[];
+  /** False means the numeric compatibility fields must not be shown as a projection. */
+  projectionAvailable?: boolean;
+  unavailableReason?: string;
+  /** Legacy ranges are heuristics, not calibrated percentiles. */
+  estimated?: boolean;
+  method?: string;
 }
 
 export interface RosterPlayer {
@@ -95,6 +106,8 @@ export interface RosterPlayer {
   newsTimestamp?: string;
   recentGames?: RecentGameUsage[];
   decisionProfile?: PlayerDecisionProfile;
+  coreProjection?: import("./core/schema").Projection;
+  coreAnomalies?: import("./core/schema").Anomaly[];
 }
 
 export interface Recommendation {
@@ -103,6 +116,9 @@ export interface Recommendation {
   headline: string;
   target?: string;
   alternative?: string;
+  targetPlayerId?: string;
+  alternativePlayerId?: string;
+  lineupChanges?: Array<{ playerId: string; name: string; fromSlot: string; toSlot: string }>;
   confidence: Confidence;
   confidenceScore: number;
   risk: string;
@@ -144,6 +160,8 @@ export interface PendingMove {
   status: "pending" | "unknown";
   add?: string;
   drop?: string;
+  addProviderId?: string;
+  dropProviderId?: string;
   partner?: string;
 }
 
@@ -181,6 +199,8 @@ export interface SyncSnapshot {
   recommendations: Recommendation[];
   agents: AgentRun[];
   sources: SourceRef[];
+  /** Original provider values, before heuristics or Predictive Core adjustments. */
+  sourceProjections?: PlayerProjection[];
   warnings: string[];
   pendingMoves?: PendingMove[];
   rosterChanges?: RosterChange[];

@@ -1,11 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { synchronize } from "@/lib/orchestrator";
+import { serverEnv } from "@/lib/env";
 
 export const runtime = "nodejs";
 
 function authorized(request: NextRequest) {
-  const expected = process.env.CRON_SECRET;
+  const expected = serverEnv().CRON_SECRET;
   const actual = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!expected || !actual) return false;
   const supplied = Buffer.from(actual);

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const externalPlayerSchema = z.object({
-  providerId: z.string().min(1),
+  providerId: z.string().trim().min(1),
   name: z.string().min(1),
   team: z.string().min(1).max(4),
   position: z.enum(["QB", "RB", "WR", "TE", "DST", "K"]),
@@ -58,15 +58,32 @@ export const externalSyncSchema = z.object({
     status: z.enum(["pending", "unknown"]),
     add: z.string().min(1).optional(),
     drop: z.string().min(1).optional(),
+    addProviderId: z.string().trim().min(1).optional(),
+    dropProviderId: z.string().trim().min(1).optional(),
     partner: z.string().min(1).optional(),
   })).optional(),
   source: z.enum(["flaim", "espn", "manual", "chatgpt"]),
   sourceTimestamp: z.string().datetime(),
   fetchedAt: z.string().datetime().optional(),
 }).superRefine((payload, context) => {
-  const rosterIds = new Set(payload.roster.map((player) => player.providerId));
-  const occupiedAvailableIds = payload.freeAgents.filter((player) => rosterIds.has(player.providerId)).map((player) => player.providerId);
-  if (occupiedAvailableIds.length) context.addIssue({ code: "custom", path: ["freeAgents"], message: "Un jugador del roster aparece también como disponible." });
+  const rosters: Array<{ players: typeof payload.roster; path: Array<string | number> }> = [
+    { players: payload.roster, path: ["roster"] },
+    ...(payload.opponent ? [{ players: payload.opponent.roster, path: ["opponent", "roster"] }] : []),
+    ...(payload.nextOpponent ? [{ players: payload.nextOpponent.roster, path: ["nextOpponent", "roster"] }] : []),
+    ...(payload.tradePartners ?? []).map((partner, index) => ({ players: partner.roster, path: ["tradePartners", index, "roster"] })),
+  ];
+  const occupiedIds = new Set(rosters.flatMap(({ players }) => players.map((player) => player.providerId.trim())));
+  for (const { players, path } of [...rosters, { players: payload.freeAgents, path: ["freeAgents"] }]) {
+    const ids = new Set<string>();
+    for (const [index, player] of players.entries()) {
+      const id = player.providerId.trim();
+      if (ids.has(id)) context.addIssue({ code: "custom", path: [...path, index, "providerId"], message: "ID de jugador duplicado en el mismo roster o mercado." });
+      ids.add(id);
+    }
+  }
+  if (payload.freeAgents.some((player) => occupiedIds.has(player.providerId.trim()))) {
+    context.addIssue({ code: "custom", path: ["freeAgents"], message: "Un jugador ocupado por un equipo aparece también como disponible." });
+  }
 });
 
 export type ExternalSyncPayload = z.infer<typeof externalSyncSchema>;

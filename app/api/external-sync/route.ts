@@ -3,11 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { captureServerEvent } from "@/lib/analytics";
 import { synchronize } from "@/lib/orchestrator";
 import { externalSyncSchema } from "@/lib/schemas";
+import { serverEnv } from "@/lib/env";
 
 export const runtime = "nodejs";
 
 function authorized(request: NextRequest) {
-  const expected = process.env.EXTERNAL_SYNC_SECRET;
+  const expected = serverEnv().EXTERNAL_SYNC_SECRET;
   const actual = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!expected || !actual) return false;
   const a = Buffer.from(actual); const b = Buffer.from(expected);

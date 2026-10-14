@@ -4,8 +4,9 @@ import { useMemo, useState } from "react";
 import type { SyncSnapshot } from "@/lib/types";
 import { optimizeLineup } from "@/lib/engine";
 import { formatMonterrey } from "@/lib/time";
+import { CoreDashboard } from "./core-dashboard";
 
-type View = "command" | "lineup" | "actions" | "system";
+type View = "command" | "lineup" | "actions" | "core" | "system";
 
 export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapshot }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
@@ -53,9 +54,9 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
       </header>
 
       <nav className="nav-tabs" aria-label="Secciones">
-        {(["command", "lineup", "actions", "system"] as View[]).map((item) => (
+        {(["command", "lineup", "actions", "core", "system"] as View[]).map((item) => (
           <button key={item} onClick={() => setView(item)} className={view === item ? "active" : ""}>
-            {item === "command" ? "Resumen" : item === "lineup" ? "Alineación" : item === "actions" ? "Acciones" : "Sistema"}
+            {item === "command" ? "Resumen" : item === "lineup" ? "Alineación" : item === "actions" ? "Acciones" : item === "core" ? "Predicciones" : "Sistema"}
           </button>
         ))}
       </nav>
@@ -74,6 +75,7 @@ export function CommandCenter({ initialSnapshot }: { initialSnapshot: SyncSnapsh
       {view === "lineup" && <LineupView starters={starters} bench={bench} historical={snapshot.freshness === "STALE"} />}
       {view === "actions" && <ActionsView snapshot={snapshot} />}
       {view === "system" && <SystemView snapshot={snapshot} />}
+      {view === "core" && <CoreDashboard />}
 
       <footer>
         <span>Temporada {snapshot.season} · Semana {snapshot.week}</span>
@@ -120,7 +122,7 @@ function CommandView({ snapshot }: { snapshot: SyncSnapshot }) {
 function LineupView({ starters, bench, historical }: { starters: SyncSnapshot["roster"]; bench: SyncSnapshot["roster"]; historical: boolean }) {
   return <section className="panel lineup-panel">
     <div className="panel-head"><h2>Alineación {starters.some((p) => p.locked) ? "y puntos" : "óptima"}</h2><span>DATOS DE LIGA · {historical ? "HISTÓRICOS" : "FRESCOS"}</span></div>
-    <div className="decision-note">Veredicto directo con piso estimado, mediana y techo. El piso es un percentil conservador, no puntos garantizados. Cada fila revela el factor oculto y los datos que faltan.</div>
+    <div className="decision-note">Los rangos del motor anterior son heurísticos. Las bandas P10/P50/P90 del núcleo se habilitan después de un backtest real aceptado. Cada jugador incluye los datos que faltan.</div>
     <h3>Titulares recomendados</h3>
     <div className="player-list"><DecisionHeader />{starters.length ? starters.map((p) => <PlayerRow key={p.canonicalPlayerId} player={p} historical={historical} starter />) : <Empty message="El roster actual se mostrará después de una sincronización de liga fresca." />}</div>
     <h3>Banca</h3>
@@ -176,15 +178,16 @@ function PlayerRow({ player, historical, starter }: { player: SyncSnapshot["rost
   const matchup = player.opponent ? `${player.homeAway === "away" ? "@" : "vs"} ${player.opponent}` : null;
   const conditions = [player.venue, player.weather].filter(Boolean).join(" · ");
   const profile = player.decisionProfile;
+  const unavailable = profile?.projectionAvailable === false;
   const pct = (value?: number) => value == null ? "N/D" : `${Math.round(value * 100)}%`;
   const usage = profile ? [`${profile.sampleGames}J`, `snaps ${pct(profile.snapShare)}`, `targets ${pct(profile.targetShare)}`, `rutas ${pct(profile.routeParticipation)}`, `toques ${profile.touchesPerGame?.toFixed(1) ?? "N/D"}`, `RZ ${profile.redZoneTouchesPerGame?.toFixed(1) ?? "N/D"}`, `I5 ${profile.insideFiveTouchesPerGame?.toFixed(1) ?? "N/D"}`].join(" · ") : "Sin perfil de decisión";
   const context = [player.overUnder != null ? `O/U ${player.overUnder}` : "O/U N/D", player.spread != null ? `spread ${player.spread > 0 ? "+" : ""}${player.spread}` : "spread N/D", player.windMph != null ? `viento ${player.windMph} mph` : "viento N/D", player.opponentPointsAllowedL3 != null ? `rival L3 ${player.opponentPointsAllowedL3} PPR a ${player.position}` : "rival L3 N/D", player.divisional ? "divisional" : null, player.shortWeek ? "semana corta" : null, player.crossCountryTravel ? "viaje largo" : null].filter(Boolean).join(" · ");
   return <div className="player-row">
     <span className="slot">{player.slot}</span>
     <div className="player-main"><b>{player.name}</b><small>{player.team} · {player.position}{matchup ? ` · ${matchup}` : ""}{player.injury ? ` · ${player.injury}` : ""}</small></div>
-    <strong>{profile?.floor.toFixed(1) ?? player.floor?.toFixed(1) ?? "—"}</strong>
-    <strong className="median">{profile?.median.toFixed(1) ?? player.projection?.toFixed(1) ?? "—"}</strong>
-    <strong>{profile?.ceiling.toFixed(1) ?? player.ceiling?.toFixed(1) ?? "—"}</strong>
+    <strong>{unavailable ? "—" : profile?.floor.toFixed(1) ?? player.floor?.toFixed(1) ?? "—"}</strong>
+    <strong className="median">{unavailable ? "—" : profile?.median.toFixed(1) ?? player.projection?.toFixed(1) ?? "—"}</strong>
+    <strong>{unavailable ? "—" : profile?.ceiling.toFixed(1) ?? player.ceiling?.toFixed(1) ?? "—"}</strong>
     <div className="verdict"><b>{player.locked ? "LOCK" : starter ? "SÍ" : "NO"}</b><small>{status}</small></div>
     <div className="player-detail"><small>{usage}</small><small>{context}</small>{conditions && <small>{conditions}</small>}<small><b>FACTOR:</b> {profile?.hiddenFactor ?? "datos insuficientes"} · cobertura {profile?.confidence ?? 0}%</small>{profile?.missing.length ? <small>Sin confirmar: {profile.missing.join(", ")}</small> : null}{player.news && <small>Reporte: {player.news}</small>}</div>
   </div>;

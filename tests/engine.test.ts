@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateProjections, buildDecisionProfile, optimizeLineup, pprPoints, rosterManagementRecommendations, simulateWin, topLineupRecommendations, tradeRecommendations, waiverRecommendations } from "@/lib/engine";
+import { aggregateProjections, buildDecisionProfile, lineupDecisionScore, optimizeLineup, pprPoints, rosterManagementRecommendations, simulateWin, topLineupRecommendations, tradeRecommendations, waiverRecommendations } from "@/lib/engine";
 import { isPlayerLocked, isStale, nflPeriod } from "@/lib/time";
 import { providerPlayerId } from "@/lib/player-identity";
 import type { PlayerProjection, RosterPlayer } from "@/lib/types";
@@ -166,5 +166,75 @@ describe("decision range", () => {
       { PlayerID: 2, Name: "B", Team: "SF", Position: "WR", Week: 2, ReceivingTargets: 12, Receptions: 7, OffensiveSnapsPlayed: 45, OffensiveTeamSnaps: 60 },
     ]);
     expect(rows.find((row) => row.name === "A")?.games[0].targetShare).toBe(0.4);
+  });
+});
+
+describe("audited decision regressions", () => {
+  const p = (id: string, position: RosterPlayer["position"], projection: number | undefined, slot = "Bench", extra: Partial<RosterPlayer> = {}): RosterPlayer => ({ canonicalPlayerId: `test:${id}`, name: id, team: "X", position, projection, slot, ...extra });
+  const starters = () => [p("q", "QB", 20, "QB"), p("r1", "RB", 14, "RB"), p("r2", "RB", 17, "RB"), p("w1", "WR", 15, "WR"), p("w2", "WR", 14, "WR"), p("flex", "WR", 13, "RB/WR"), p("t", "TE", 10, "TE"), p("d", "DST", 8, "DST"), p("k", "K", 7, "K")];
+  it("never ranks a verified OUT or bye above a playable negative forecast", () => {
+    const core: NonNullable<RosterPlayer["coreProjection"]> = {player_id:"test:out",season:2026,week:6,scenario:"base",mean:0,sd:0,p10:0,p50:0,p90:0,prob_play:0,confidence:100,drivers:[],model_version:null,scoring_hash:"fixture",as_of:"2026-10-14T15:00:00Z",fetched_at:"2026-10-14T15:00:00Z",estimated:false,method:"Verified unavailable",reason:"Unavailable",missing:[],eligible:true,ros_mean:null,ros_sd:null,playoff_mean:null,war:null};
+    const active = p("active", "QB", -2, "Bench", {coreProjection:{...core,player_id:"test:active",mean:-2,p10:-4,p50:-2,p90:0,sd:2,prob_play:1}});
+    for (const unavailable of [p("out","QB",0,"QB",{injury:"OUT",coreProjection:core}),p("bye","QB",0,"QB",{coreProjection:core})]) {
+      expect(lineupDecisionScore(unavailable)).toBeLessThan(lineupDecisionScore(active));
+      const roster = [...starters().filter((row) => row.position !== "QB"), unavailable, active];
+      const moves = topLineupRecommendations(roster);
+      expect(moves).toHaveLength(1);
+      expect(JSON.stringify(moves)).not.toMatch(/Infinity|NaN/);
+      expect(moves[0].why).toContainEqual(expect.objectContaining({text:expect.stringContaining("sustitución necesaria")}));
+      expect(lineupDecisionScore({...unavailable,locked:true})).toBe(0);
+      expect(optimizeLineup(roster.map((row) => row.canonicalPlayerId===unavailable.canonicalPlayerId?{...row,locked:true}:row))).toHaveLength(9);
+    }
+  });
+
+  it("recommends a healthy replacement for OUT despite lower raw projection", () => {
+    const roster = starters().map((player) => player.name === "r1" ? { ...player, injury: "OUT" } : player);
+    roster.push(p("healthy", "RB", 12));
+    const moves = topLineupRecommendations(roster);
+    expect(moves).toHaveLength(1);
+    expect(moves[0]).toMatchObject({ target: "healthy", alternative: "r1", targetPlayerId: "test:healthy", alternativePlayerId: "test:r1" });
+    expect(moves[0].lineupChanges).toContainEqual({ playerId: "test:healthy", name: "healthy", fromSlot: "Bench", toSlot: "RB" });
+  });
+
+  it("pairs each addition with a different player removed by the complete lineup", () => {
+    const roster = [p("q", "QB", 20, "QB"), p("low-r", "RB", 2, "RB"), p("r2", "RB", 18, "RB"), p("w1", "WR", 10, "WR"), p("w2", "WR", 9, "WR"), p("flex-r", "RB", 8, "RB/WR"), p("t", "TE", 10, "TE"), p("d", "DST", 8, "DST"), p("k", "K", 7, "K"), p("new-w1", "WR", 30), p("new-w2", "WR", 25)];
+    const optimizedIds = new Set(optimizeLineup(roster).map((player) => player.canonicalPlayerId));
+    const moves = topLineupRecommendations(roster);
+    expect(moves).toHaveLength(2);
+    expect(new Set(moves.map((move) => move.alternativePlayerId)).size).toBe(2);
+    expect(moves.every((move) => !optimizedIds.has(move.alternativePlayerId!))).toBe(true);
+    expect(moves[0].lineupChanges).toContainEqual({ playerId: "test:flex-r", name: "flex-r", fromSlot: "RB/WR", toSlot: "RB" });
+  });
+
+  it("never offers current starters when a partial roster prevents full optimization", () => {
+    const roster = starters().filter((player) => player.name !== "flex");
+    const partner = { teamId: "other", name: "Other", roster: [p("their-q", "QB", 8, "QB"), p("their-r", "RB", 20, "RB")] };
+    expect(optimizeLineup(roster)).toEqual([]);
+    expect(tradeRecommendations(roster, [partner])).toEqual([]);
+  });
+
+  it("does not trade the only healthy quarterback merely because he is on the bench", () => {
+    const partner = { teamId: "other", name: "Other", roster: [p("their-q", "QB", 8, "QB"), p("their-r", "RB", 20)] };
+    expect(tradeRecommendations([p("only-q", "QB", 20)], [partner])).toEqual([]);
+  });
+
+  it("preserves negative DST points with ordered, explicitly heuristic ranges", () => {
+    const profile = buildDecisionProfile(p("negative-d", "DST", -4, "DST"));
+    expect(profile.median).toBe(-4);
+    expect(profile.floor).toBeLessThanOrEqual(profile.median);
+    expect(profile.ceiling).toBeGreaterThanOrEqual(profile.median);
+    expect(profile).toMatchObject({ projectionAvailable: true, estimated: true });
+    expect(profile.method).toContain("not a calibrated percentile");
+    const aggregate = aggregateProjections([{ canonicalPlayerId: "test:negative-d", name: "negative-d", team: "X", position: "DST", points: -4, source: "test" }]);
+    expect(aggregate).toMatchObject({ median: -4, floor: -5.2, ceiling: -2.8, estimated: true });
+  });
+
+  it("marks an absent projection unavailable and cannot promote it through optimistic context", () => {
+    const unknown = p("unknown", "WR", undefined, "Bench", { opportunityScore: 100, depthOrder: 1 });
+    const profile = buildDecisionProfile(unknown);
+    expect(profile).toMatchObject({ projectionAvailable: false, confidence: 0 });
+    expect(profile.unavailableReason).toBeTruthy();
+    expect(profile.missing).toContain("proyección e historial de puntos");
+    expect(waiverRecommendations([p("drop", "WR", 2)], [{ ...unknown, slot: "FA", decisionProfile: profile }])).toEqual([]);
   });
 });

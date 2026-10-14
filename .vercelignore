@@ -4,3 +4,5 @@ node_modules
 coverage
 work
 *.tsbuildinfo
+.env*
+!.env.example

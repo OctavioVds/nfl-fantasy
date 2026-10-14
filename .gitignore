@@ -12,3 +12,6 @@ work/npm-cache
 
 .vercel
 .env*
+work/core/
+__pycache__/
+*.pyc
