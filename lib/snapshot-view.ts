@@ -31,6 +31,7 @@ export function snapshotForDisplay(snapshot: SyncSnapshot, now = new Date()): Sy
     teamRecord: undefined,
     opponentName: undefined,
     roster: [],
+    sourceProjections: [],
     recommendations: [],
     pendingMoves: undefined,
     rosterChanges: undefined,

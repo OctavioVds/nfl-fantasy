@@ -42,3 +42,9 @@ OUT RB14 sustituido por sanoRB12 en optimizer pero sin recomendación; dos WR nu
 ## Cierre autorizado con excepciones
 
 Waiver Engine: aplicado parcialmente. Lineup Optimizer: aplicado parcialmente. Trade Engine: aplicado parcialmente. Inicio del Predictive Core con las excepciones reales de `DECISIONS.md`: se conserva la base, se corrigen riesgos verificables y la sustitución del modelo permanece cerrada hasta datos reales, scoring reconciliado y backtest aceptado. Esto cierra la fase documental permitida por la regla de excepciones, no acredita módulos completos ni producción verificada.
+
+## Evidencia posterior al cierre de fase0
+
+Neon conectado después de entregar la auditoría: proyecto fantasy-command-center-db, rama main con schema_migrations001/002 confirmadas. actuals=0, accuracy_metrics=0, projections_by_source=0 y current_league_state sin timestamp; player_id_map SportsDataIO=0. Existe un snapshot histórico de semana3; la UI actual lo oculta como no vigente. La presencia de flaim_connections no demuestra OAuth funcionando: PR4 sigue draft separado.
+
+Vercel MCP403en equipo; CLI autenticado oficial accede q (prj_dqiZ9VSzV6dz66ogjuupxLud9uIr) y confirma producción q-ecru-nu.vercel.app. Los valores sensibles prod no se exportan por API; no se reemplazaron. Preview usa rama Neon br-ancient-bird-awn1kkay y variables de verificación propias de feat/predictive-core. Migración003 pasó19statements; corrida desde botón local realmente persistida como BLOCKED por antigüedad/scoring, no como consulta ESPN nueva. Verificación de preview y checks finales en VERIFICATION.md.

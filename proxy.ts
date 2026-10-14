@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { serverEnv } from "./lib/env";
 
 function validPassword(request: NextRequest, expected: string) {
   const authorization = request.headers.get("authorization");
@@ -18,9 +19,10 @@ function validPassword(request: NextRequest, expected: string) {
 
 export function proxy(request: NextRequest) {
   if (process.env.NODE_ENV === "development") return NextResponse.next();
-  if (["/api/external-sync", "/api/cron/sync"].includes(request.nextUrl.pathname)) return NextResponse.next();
+  if (["/api/external-sync", "/api/cron/sync", "/api/cron/core"].includes(request.nextUrl.pathname)) return NextResponse.next();
+  if (request.nextUrl.pathname === "/api/core/run" && request.headers.get("authorization")?.startsWith("Bearer ")) return NextResponse.next();
 
-  const password = process.env.APP_ACCESS_PASSWORD;
+  const password = serverEnv().APP_ACCESS_PASSWORD;
   if (!password) {
     return new NextResponse("Acceso privado no configurado.", { status: 503, headers: { "Cache-Control": "no-store" } });
   }

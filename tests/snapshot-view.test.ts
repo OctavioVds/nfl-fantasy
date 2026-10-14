@@ -39,4 +39,12 @@ describe("private snapshot display guard", () => {
     expect(display.freshness).toBe("DEGRADED");
     expect(display.roster[0]?.name).toBe("Current Player");
   });
+  it("hides raw baselines with an expired snapshot and preserves them while fresh", () => {
+    const now = new Date("2026-10-14T14:00:00Z");
+    const snapshot = fallbackSnapshot();
+    Object.assign(snapshot, nflPeriod(now), { freshness: "FRESH", dataUpdatedAt: now.toISOString() });
+    snapshot.sourceProjections = [{ canonicalPlayerId: "espn:1", name: "Private Player", team: "SF", position: "WR", source: "espn", points: 12 }];
+    expect(snapshotForDisplay(snapshot, now).sourceProjections).toEqual(snapshot.sourceProjections);
+    expect(snapshotForDisplay(snapshot, new Date("2026-10-16T14:00:00Z")).sourceProjections).toEqual([]);
+  });
 });

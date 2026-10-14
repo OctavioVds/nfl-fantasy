@@ -4,14 +4,16 @@ import type { ExternalSyncPayload } from "./schemas";
 import type { SyncSnapshot } from "./types";
 import { isStale, nflPeriod } from "./time";
 import { leagueDataVersion } from "./data-version";
+import { serverEnv } from "./env";
 
 let memorySnapshot: SyncSnapshot | null = null;
 let memoryExternalIngest: ExternalSyncPayload | null = null;
 
 export async function saveSnapshot(snapshot: SyncSnapshot) {
   memorySnapshot = snapshot;
-  if (!process.env.DATABASE_URL) return { persisted: false, adapter: "memory" };
-  const sql = neon(process.env.DATABASE_URL);
+  const { DATABASE_URL: databaseUrl } = serverEnv();
+  if (!databaseUrl) return { persisted: false, adapter: "memory" };
+  const sql = neon(databaseUrl);
   await sql`insert into sync_snapshots (id, season, week, status, payload, created_at)
     values (${snapshot.id}, ${snapshot.season}, ${snapshot.week}, ${snapshot.health}, ${JSON.stringify(snapshot)}::jsonb, ${snapshot.generatedAt})
     on conflict (id) do update set payload = excluded.payload, status = excluded.status`;
@@ -45,22 +47,37 @@ export async function saveSnapshot(snapshot: SyncSnapshot) {
       await sql`insert into players (canonical_player_id, display_name, team, position)
       values (${player.canonicalPlayerId}, ${player.name}, ${player.team}, ${player.position})
       on conflict (canonical_player_id) do update set display_name = excluded.display_name, team = excluded.team, position = excluded.position, updated_at = now()`;
-      const identitySeparator = player.canonicalPlayerId.indexOf(":");
-      if (identitySeparator > 0) {
-        await sql`insert into player_id_map (provider, provider_player_id, canonical_player_id, confidence)
-          values (${player.canonicalPlayerId.slice(0, identitySeparator)}, ${player.canonicalPlayerId.slice(identitySeparator + 1)}, ${player.canonicalPlayerId}, 1)
-          on conflict (provider, provider_player_id) do update set canonical_player_id = excluded.canonical_player_id, confidence = excluded.confidence, updated_at = now()`;
-      }
-      if (player.projection != null) {
-        await sql`insert into projections_by_source (sync_run_id, canonical_player_id, provider, season, week, scoring, projection, source_timestamp, fetched_at)
-        values (${snapshot.syncRunId ?? snapshot.id}, ${player.canonicalPlayerId}, ${projectionSource}, ${snapshot.season}, ${snapshot.week}, ${JSON.stringify({ label: snapshot.scoringLabel ?? null })}::jsonb, ${player.projection}, ${snapshot.dataUpdatedAt ?? null}, ${snapshot.dataFetchedAt ?? snapshot.generatedAt})
-        on conflict (sync_run_id, canonical_player_id, provider) do update set projection = excluded.projection, source_timestamp = excluded.source_timestamp, fetched_at = excluded.fetched_at`;
-      }
-      if (player.decisionProfile) {
+      if (player.decisionProfile && player.decisionProfile.projectionAvailable !== false) {
         await sql`insert into projection_snapshots (sync_run_id, canonical_player_id, season, week, floor, median, ceiling, confidence, payload)
         values (${snapshot.syncRunId ?? snapshot.id}, ${player.canonicalPlayerId}, ${snapshot.season}, ${snapshot.week}, ${player.decisionProfile.floor}, ${player.decisionProfile.median}, ${player.decisionProfile.ceiling}, ${player.decisionProfile.confidence / 100}, ${JSON.stringify(player.decisionProfile)}::jsonb)
         on conflict (sync_run_id, canonical_player_id) do update set floor = excluded.floor, median = excluded.median, ceiling = excluded.ceiling, confidence = excluded.confidence, payload = excluded.payload`;
       }
+    }
+    // Never relabel model-adjusted medians as ESPN/Flaim baselines.
+    const rawProjections = [...new Map((snapshot.sourceProjections ?? []).map((projection) => [`${projection.canonicalPlayerId}|${projection.source}`, projection])).values()];
+    if (rawProjections.length) {
+      const rawRows = JSON.stringify(rawProjections.map((projection) => ({
+        canonical_player_id: projection.canonicalPlayerId, display_name: projection.name, team: projection.team, position: projection.position,
+        provider: projection.source, provider_player_id: projection.providerPlayerId ?? null, projection: projection.points,
+        scoring: { settings: projection.scoring ?? null, label: projection.scoringLabel ?? null },
+        source_timestamp: projection.sourceTimestamp ?? null, fetched_at: projection.fetchedAt ?? snapshot.generatedAt,
+      })));
+      // Bulk writes keep a large available-player market at three HTTP queries.
+      await sql`insert into players (canonical_player_id, display_name, team, position)
+        select p.canonical_player_id, p.display_name, p.team, p.position
+        from jsonb_to_recordset(${rawRows}::jsonb) as p(canonical_player_id text, display_name text, team text, position text)
+        where true
+        on conflict (canonical_player_id) do nothing`;
+      await sql`insert into player_id_map (provider, provider_player_id, canonical_player_id, confidence)
+        select p.provider, p.provider_player_id, p.canonical_player_id, 1
+        from jsonb_to_recordset(${rawRows}::jsonb) as p(provider text, provider_player_id text, canonical_player_id text)
+        where p.provider_player_id is not null
+        on conflict (provider, provider_player_id) do nothing`;
+      await sql`insert into projections_by_source (sync_run_id, canonical_player_id, provider, season, week, scoring, projection, source_timestamp, fetched_at)
+        select ${snapshot.syncRunId ?? snapshot.id}, p.canonical_player_id, p.provider, ${snapshot.season}, ${snapshot.week}, p.scoring, p.projection, p.source_timestamp, p.fetched_at
+        from jsonb_to_recordset(${rawRows}::jsonb) as p(canonical_player_id text, provider text, scoring jsonb, projection numeric, source_timestamp timestamptz, fetched_at timestamptz)
+        where true
+        on conflict (sync_run_id, canonical_player_id, provider) do update set projection = excluded.projection, scoring = excluded.scoring, source_timestamp = excluded.source_timestamp, fetched_at = excluded.fetched_at`;
     }
     await sql`insert into league_snapshots (sync_run_id, source, season, week, data_version, payload, source_timestamp, fetched_at)
       values (${snapshot.syncRunId ?? snapshot.id}, ${projectionSource}, ${snapshot.season}, ${snapshot.week}, ${snapshot.dataVersion ?? null}, ${JSON.stringify({ leagueName: snapshot.leagueName, teamRecord: snapshot.teamRecord, opponentName: snapshot.opponentName, pendingMoves: snapshot.pendingMoves })}::jsonb, ${snapshot.dataUpdatedAt ?? null}, ${snapshot.dataFetchedAt ?? snapshot.generatedAt})
@@ -73,9 +90,10 @@ export async function saveSnapshot(snapshot: SyncSnapshot) {
 }
 
 export async function getLatestSnapshot(): Promise<SyncSnapshot | null> {
-  if (!process.env.DATABASE_URL) return memorySnapshot;
+  const { DATABASE_URL: databaseUrl } = serverEnv();
+  if (!databaseUrl) return memorySnapshot;
   try {
-    const sql = neon(process.env.DATABASE_URL);
+    const sql = neon(databaseUrl);
     const rows = await sql`select payload from sync_snapshots order by created_at desc limit 1`;
     return (rows[0]?.payload as SyncSnapshot | undefined) ?? null;
   } catch { return memorySnapshot; }
@@ -85,8 +103,9 @@ export async function saveExternalIngest(payload: ExternalSyncPayload, syncRunId
   const { season, week } = nflPeriod(new Date());
   const current = payload.league.season === season && payload.league.week === week && !isStale(payload.sourceTimestamp, 24 * 60 * 60 * 1000);
   if (current) memoryExternalIngest = payload;
-  if (!process.env.DATABASE_URL) return { persisted: false, adapter: "memory", currentState: current };
-  const sql = neon(process.env.DATABASE_URL);
+  const { DATABASE_URL: databaseUrl } = serverEnv();
+  if (!databaseUrl) return { persisted: false, adapter: "memory", currentState: current };
+  const sql = neon(databaseUrl);
   try {
     await sql`insert into external_ingest_events (source, season, week, payload, source_timestamp, sync_run_id)
       values (${payload.source}, ${payload.league.season}, ${payload.league.week}, ${JSON.stringify(payload)}::jsonb, ${payload.sourceTimestamp}, ${syncRunId ?? null})`;
@@ -95,7 +114,7 @@ export async function saveExternalIngest(payload: ExternalSyncPayload, syncRunId
       values (${payload.source}, ${payload.league.season}, ${payload.league.week}, ${JSON.stringify(payload)}::jsonb, ${payload.sourceTimestamp})`;
   }
   const version = leagueDataVersion(payload);
-  const scopeKey = createHash("sha256").update(`${payload.source}|${payload.league.leagueId ?? payload.league.name}|${payload.league.season}`).digest("hex");
+  const scopeKey = createHash("sha256").update(`${payload.source}|${payload.league.leagueId ?? payload.league.name}|${payload.league.teamId ?? ""}|${payload.league.season}`).digest("hex");
   if (current) {
     try {
       await sql`insert into current_league_state (scope_key, source, league_id, season, week, data_version, source_timestamp, fetched_at, payload)
@@ -110,15 +129,34 @@ export async function saveExternalIngest(payload: ExternalSyncPayload, syncRunId
 }
 
 export async function getLatestExternalIngest(): Promise<unknown | null> {
-  if (!process.env.DATABASE_URL) return memoryExternalIngest;
+  const { DATABASE_URL: databaseUrl } = serverEnv();
+  if (!databaseUrl) return memoryExternalIngest;
   try {
-    const sql = neon(process.env.DATABASE_URL);
+    const sql = neon(databaseUrl);
     const rows = await sql`select payload from current_league_state order by fetched_at desc limit 1`;
     if (rows[0]?.payload) return rows[0].payload;
   } catch { /* Use the pre-002 event table during a rolling migration. */ }
   try {
-    const sql = neon(process.env.DATABASE_URL);
+    const sql = neon(databaseUrl);
     const rows = await sql`select payload from external_ingest_events order by fetched_at desc limit 1`;
     return rows[0]?.payload ?? null;
   } catch { return memoryExternalIngest; }
+}
+
+/** Explicit provider-ID mapping only. Missing DB/mapping means no cross-provider join. */
+export async function getPlayerIdentityMap(): Promise<Map<string, string>> {
+  const { DATABASE_URL: databaseUrl } = serverEnv();
+  if (!databaseUrl) return new Map();
+  try {
+    const sql = neon(databaseUrl);
+    const rows = await sql`select provider, provider_player_id, canonical_player_id from player_id_map where confidence = 1`;
+    const identities = new Map<string, string>();
+    for (const row of rows) {
+      if (typeof row.provider !== "string" || typeof row.provider_player_id !== "string" || typeof row.canonical_player_id !== "string") continue;
+      identities.set(`${row.provider.trim().toLowerCase()}:${row.provider_player_id.trim()}`, row.canonical_player_id);
+    }
+    return identities;
+  } catch {
+    return new Map();
+  }
 }

@@ -15,9 +15,9 @@ export function aggregateProjections(projections: PlayerProjection[]) {
   const unique = new Map(projections.map((p) => [p.source, p]));
   const values = [...unique.values()].map((p) => p.points).sort((a, b) => a - b);
   const median = values.length % 2 ? values[(values.length - 1) / 2] : (values[values.length / 2 - 1] + values[values.length / 2]) / 2;
-  const floor = Math.min(...values.map((v) => v * 0.7));
-  const ceiling = Math.max(...values.map((v) => v * 1.3));
-  return { median: round(median), floor: round(floor), ceiling: round(ceiling), sources: values.length };
+  const floor = Math.min(...values.map((v) => v - Math.abs(v) * 0.3));
+  const ceiling = Math.max(...values.map((v) => v + Math.abs(v) * 0.3));
+  return { median: round(median), floor: round(floor), ceiling: round(ceiling), sources: values.length, estimated: true, method: "provider median with heuristic 30% range; not calibrated percentiles" };
 }
 
 export const LINEUP_SWAP_THRESHOLD = 3;
@@ -29,9 +29,10 @@ export function buildDecisionProfile(player: RosterPlayer): PlayerDecisionProfil
     const values = games.flatMap((game) => typeof game[key] === "number" ? [game[key] as number] : []);
     return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
   };
+  const projectionAvailable = player.projection != null || points.length > 0;
   let median = player.projection ?? (points.length ? points.reduce((sum, value) => sum + value, 0) / points.length : 0);
-  let floor = player.floor ?? median * 0.67;
-  let ceiling = player.ceiling ?? median * 1.38;
+  let floor = player.floor ?? median - Math.abs(median) * 0.33;
+  let ceiling = player.ceiling ?? median + Math.abs(median) * 0.38;
   const snapShare = average("snapShare");
   const targetShare = average("targetShare");
   const routeParticipation = average("routeParticipation");
@@ -103,6 +104,7 @@ export function buildDecisionProfile(player: RosterPlayer): PlayerDecisionProfil
   }
 
   const missing = [
+    !projectionAvailable ? "proyección e historial de puntos" : null,
     snapShare == null ? "snaps" : null,
     targetShare == null && ["WR", "TE", "RB"].includes(player.position) ? "target share" : null,
     routeParticipation == null && ["WR", "TE", "RB"].includes(player.position) ? "route participation" : null,
@@ -117,10 +119,14 @@ export function buildDecisionProfile(player: RosterPlayer): PlayerDecisionProfil
     player.opponentPointsAllowedL3 == null && player.position !== "DST" ? "puntos permitidos L3" : null,
   ].filter((value): value is string => Boolean(value));
   const expected = player.position === "DST" || player.position === "K" ? 4 : player.position === "QB" ? 6 : 9;
-  const confidence = Math.max(20, Math.round(100 * Math.max(0, expected - missing.length) / expected));
+  const confidence = projectionAvailable ? Math.max(0, Math.round(100 * Math.max(0, expected - missing.length) / expected)) : 0;
   const gameScript = player.spread == null ? "Sin spread confirmado" : player.spread <= -7 ? "Favorito amplio: posible modo reloj" : player.spread >= 7 ? "Underdog amplio: posible remontada" : "Guion competitivo";
   return {
-    floor: round(Math.max(0, Math.min(floor, median))), median: round(Math.max(0, median)), ceiling: round(Math.max(median, ceiling)),
+    floor: round(Math.min(floor, median, ceiling)), median: round(median), ceiling: round(Math.max(floor, median, ceiling)),
+    projectionAvailable,
+    unavailableReason: projectionAvailable ? undefined : "Sin proyección de proveedor ni historial de puntos; los campos numéricos de compatibilidad no son una predicción.",
+    estimated: true,
+    method: `${player.projection != null ? "supplied provider projection" : points.length ? "arithmetic mean of supplied recent-game points" : "unavailable baseline"}; legacy usage/context heuristic; range is not a calibrated percentile`,
     confidence, sampleGames: games.length, snapShare, targetShare, routeParticipation, touchesPerGame,
     redZoneTouchesPerGame, insideFiveTouchesPerGame, yprr, ycoPerAttempt, gameScript,
     hiddenFactor: factors[0] ?? (missing.length ? `faltan ${missing.slice(0, 2).join(" y ")}` : "volumen y contexto sin alerta dominante"), missing,
@@ -128,6 +134,7 @@ export function buildDecisionProfile(player: RosterPlayer): PlayerDecisionProfil
 }
 
 export function lineupDecisionScore(player: RosterPlayer) {
+  if (player.coreProjection?.eligible && player.coreProjection.mean != null) return player.coreProjection.mean;
   const projection = player.decisionProfile?.median ?? player.projection ?? 0;
   const floorAdjustment = player.decisionProfile ? (player.decisionProfile.floor - projection) * 0.2 : 0;
   const opportunity = player.opportunityScore == null ? 0 : Math.max(-1, Math.min(1, (player.opportunityScore - 70) / 25));
@@ -151,11 +158,11 @@ export function optimizeLineup(players: RosterPlayer[]) {
     }
     const slot = slots[slotIndex];
     const locked = players.filter((p) => p.locked && p.slot === slot && !used.has(p.canonicalPlayerId));
-    const candidates = (locked.length ? locked : players.filter((p) => p.slot !== "IR" && !used.has(p.canonicalPlayerId) && eligible(p, slot) && (!p.locked || p.slot === slot)))
+    const candidates = (locked.length ? locked : players.filter((p) => p.slot !== "IR" && !used.has(p.canonicalPlayerId) && eligible(p, slot) && (!p.locked || p.slot === slot) && projectionExists(p)))
       .sort((a, b) => lineupDecisionScore(b) - lineupDecisionScore(a));
     for (const candidate of candidates) {
       used.add(candidate.canonicalPlayerId);
-      const incumbentBonus = currentStarters.has(candidate.canonicalPlayerId) ? LINEUP_SWAP_THRESHOLD : 0;
+      const incumbentBonus = currentStarters.has(candidate.canonicalPlayerId) && !candidate.coreProjection ? LINEUP_SWAP_THRESHOLD : 0;
       search(slotIndex + 1, used, [...lineup, { ...candidate, slot }], score + lineupDecisionScore(candidate) + incumbentBonus);
       used.delete(candidate.canonicalPlayerId);
     }
@@ -175,28 +182,44 @@ export function simulateWin(myMedian: number, oppMedian: number, iterations = 50
 
 export function topLineupRecommendations(players: RosterPlayer[]): Recommendation[] {
   const optimized = optimizeLineup(players);
+  if (!optimized.length) return [];
   const current = players.filter((p) => !["Bench", "IR"].includes(p.slot));
+  const currentIds = new Set(current.map((player) => player.canonicalPlayerId));
+  const optimizedIds = new Set(optimized.map((player) => player.canonicalPlayerId));
+  const removed = current.filter((player) => !player.locked && !optimizedIds.has(player.canonicalPlayerId));
+  const lineupChanges = optimized.flatMap((player) => {
+    const original = players.find((item) => item.canonicalPlayerId === player.canonicalPlayerId);
+    return original && original.slot !== player.slot ? [{ playerId: player.canonicalPlayerId, name: player.name, fromSlot: original.slot, toSlot: player.slot }] : [];
+  });
   const moves: Recommendation[] = [];
   for (const starter of optimized) {
-    if (current.some((p) => p.canonicalPlayerId === starter.canonicalPlayerId) || starter.locked) continue;
-    const replacement = current.filter((p) => !p.locked && (p.position === starter.position || (["RB", "WR"].includes(p.position) && ["RB", "WR"].includes(starter.position))))
-      .sort((a, b) => (a.projection ?? 99) - (b.projection ?? 99))[0];
-    if (!replacement || (starter.projection ?? 0) <= (replacement.projection ?? 0)) continue;
+    if (currentIds.has(starter.canonicalPlayerId) || starter.locked) continue;
+    // Pair only players actually removed by the complete, legal optimizer result.
+    // A flex rotation can require moving an existing starter before this addition.
+    const replacement = [...removed].sort((a, b) => Number(b.position === starter.position) - Number(a.position === starter.position)
+      || lineupDecisionScore(a) - lineupDecisionScore(b))[0];
+    if (!replacement) continue;
+    removed.splice(removed.indexOf(replacement), 1);
     const delta = round((starter.decisionProfile?.median ?? starter.projection ?? 0) - (replacement.decisionProfile?.median ?? replacement.projection ?? 0));
     const safetyDelta = round(lineupDecisionScore(starter) - lineupDecisionScore(replacement));
-    if (safetyDelta < LINEUP_SWAP_THRESHOLD) continue;
+    const unavailable = /^(IR|O|OUT|INACTIVE)$/i.test(replacement.injury ?? "");
     moves.push({
       id: `start-${starter.canonicalPlayerId}`,
       kind: "START",
-      headline: `PON A ${starter.name} · SIENTA A ${replacement.name}`,
+      headline: `PON A ${starter.name} EN ${starter.slot} · SIENTA A ${replacement.name}`,
       target: starter.name,
       alternative: replacement.name,
-      confidence: delta >= 3 ? "HIGH" : "MEDIUM",
-      confidenceScore: Math.min(10, Math.max(5, Math.round(5 + delta / 2))),
+      targetPlayerId: starter.canonicalPlayerId,
+      alternativePlayerId: replacement.canonicalPlayerId,
+      lineupChanges,
+      confidence: unavailable || delta >= 3 ? "HIGH" : "MEDIUM",
+      confidenceScore: unavailable ? 9 : Math.min(10, Math.max(5, Math.round(5 + delta / 2))),
       risk: "Las proyecciones son estimaciones; noticias tardías pueden cambiar el papel.",
       why: [
         { type: "FACT", text: `${starter.name} está en tu banca y ${replacement.name} aparece actualmente como titular.` },
-        { type: "MODEL", text: `Ventaja mediana estimada: +${delta} puntos PPR; ventaja ajustada por seguridad: +${safetyDelta}.` },
+        { type: "MODEL", text: `Diferencia de proyección estimada: ${delta >= 0 ? "+" : ""}${delta} puntos; diferencia ajustada por seguridad: ${safetyDelta >= 0 ? "+" : ""}${safetyDelta}.` },
+        ...(unavailable ? [{ type: "FACT" as const, text: `${replacement.name} figura no disponible (${replacement.injury}); una proyección cruda mayor no justifica mantenerlo.` }] : []),
+        { type: "MODEL", text: `Aplica la alineación conjunta: ${lineupChanges.map((change) => `${change.name}: ${change.fromSlot} → ${change.toSlot}`).join("; ")}.` },
         { type: "INFERENCE", text: `Factor decisivo: ${starter.decisionProfile?.hiddenFactor ?? `supera el umbral conservador de ${LINEUP_SWAP_THRESHOLD} puntos`}.` },
       ],
       actionable: true,
@@ -265,14 +288,14 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
     (p.projection ?? 0) >= 10,
     (p.futureProjection ?? 0) >= 8,
   ].filter(Boolean).length >= 2;
-  const dropPool = roster.filter((p) => p.slot === "Bench" && !p.locked && !isHighValueHold(p));
+  const dropPool = roster.filter((p) => p.slot === "Bench" && !p.locked && !isHighValueHold(p) && projectionExists(p));
   if (!dropPool.length || !freeAgents.length) return [];
   const quarterbackCount = roster.filter((p) => p.position === "QB" && p.slot !== "IR").length;
 
   const rosterIds = new Set(roster.map((player) => player.canonicalPlayerId));
-  const ranked = freeAgents.filter((candidate) => !candidate.locked && !rosterIds.has(candidate.canonicalPlayerId) && !(candidate.position === "QB" && quarterbackCount >= 2)).map((candidate) => {
+  const ranked = freeAgents.filter((candidate) => !candidate.locked && !rosterIds.has(candidate.canonicalPlayerId) && projectionExists(candidate) && !(candidate.position === "QB" && quarterbackCount >= 2)).map((candidate) => {
     const specialTeamsReplacement = ["DST", "K"].includes(candidate.position)
-      ? roster.filter((p) => p.position === candidate.position && !p.locked)
+      ? roster.filter((p) => p.position === candidate.position && !p.locked && projectionExists(p))
       : [];
     const compatible = dropPool.filter((p) => p.position === candidate.position);
     const pool = specialTeamsReplacement.length ? specialTeamsReplacement : compatible.length ? compatible : dropPool;
@@ -284,6 +307,7 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
     const confidenceScore = Math.min(10, Math.max(3, Math.round(3 + Math.max(0, net) / 2 + (candidate.opportunityScore ?? 50) / 50 + dataSignals / 4)));
     return { candidate, drop, net, candidateValue, confidenceScore };
   }).filter((row) => row.net >= 1).sort((a, b) => Math.round(b.net) - Math.round(a.net)
+    || Math.max(0, ...b.candidate.coreAnomalies?.map((a) => a.strength) ?? []) - Math.max(0, ...a.candidate.coreAnomalies?.map((a) => a.strength) ?? [])
     || (b.candidate.opportunityScore ?? 0) - (a.candidate.opportunityScore ?? 0)
     || b.net - a.net
     || (b.candidate.futureProjection ?? 0) - (a.candidate.futureProjection ?? 0));
@@ -302,11 +326,14 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
       headline: `TOMA A ${candidate.name} · TIRA A ${drop.name}`,
       target: candidate.name,
       alternative: drop.name,
+      targetPlayerId: candidate.canonicalPlayerId,
+      alternativePlayerId: drop.canonicalPlayerId,
       confidence: confidenceScore >= 8 ? "HIGH" as const : confidenceScore >= 6 ? "MEDIUM" as const : "LOW" as const,
       confidenceScore,
       risk: "La disponibilidad y el papel pueden cambiar antes de procesar waivers; confirma noticias cercanas al cierre.",
       why: [
         { type: "FACT" as const, text: `${candidate.name} fue confirmado disponible por la fuente de la liga.` },
+        ...(candidate.coreAnomalies ?? []).map((anomaly) => ({type: "INFERENCE" as const, text: `${anomaly.signal}: score de detección ${anomaly.strength}/100, sin conversión a puntos. ${anomaly.evidence.map((row) => `${row.name}=${row.value} (${row.source}, ${row.as_of})`).join("; ")}` })),
         { type: "FACT" as const, text: `${drop.name} está en tu roster, no está bloqueado y fue validado como opción de corte.` },
         { type: "MODEL" as const, text: `Ganancia de valor estimada sobre ${drop.name}: +${net}.` },
         ...(candidate.opportunityScore != null ? [{ type: "INFERENCE" as const, text: `Opportunity score normalizado: ${candidate.opportunityScore}/100.` }] : []),
@@ -318,14 +345,16 @@ export function waiverRecommendations(roster: RosterPlayer[], freeAgents: Roster
 
 export function tradeRecommendations(roster: RosterPlayer[], partners: TradePartner[]): Recommendation[] {
   const myStarters = new Set(optimizeLineup(roster).map((p) => p.canonicalPlayerId));
-  const offers = roster.filter((p) => !p.locked && p.slot !== "IR" && !myStarters.has(p.canonicalPlayerId));
+  const offers = roster.filter((p) => !p.locked && p.slot === "Bench" && !myStarters.has(p.canonicalPlayerId) && projectionExists(p));
   const myPositionCounts = new Map(["RB", "WR", "TE"].map((position) => [position, roster.filter((p) => p.position === position && p.slot !== "IR").length]));
   const candidates: { give: RosterPlayer; receive: RosterPlayer; partner: TradePartner; fit: number; gap: number }[] = [];
 
   for (const partner of partners) {
     const theirStarters = new Set(optimizeLineup(partner.roster).map((p) => p.canonicalPlayerId));
-    const targets = partner.roster.filter((p) => !p.locked && p.slot !== "IR" && !theirStarters.has(p.canonicalPlayerId) && ["RB", "WR", "TE"].includes(p.position));
+    const targets = partner.roster.filter((p) => !p.locked && p.slot === "Bench" && !theirStarters.has(p.canonicalPlayerId) && ["RB", "WR", "TE"].includes(p.position) && projectionExists(p));
     for (const give of offers) for (const receive of targets) {
+      if ([give, receive].some((player) => player.coreProjection && (player.coreProjection.ros_mean == null || player.coreProjection.playoff_mean == null || player.coreProjection.war == null))) continue;
+      if (give.position === "QB" && roster.filter((player) => player.position === "QB" && player.slot !== "IR" && player.canonicalPlayerId !== give.canonicalPlayerId && !/^(IR|O|OUT|INACTIVE)$/i.test(player.injury ?? "")).length === 0) continue;
       if (receive.position === "TE" && (myPositionCounts.get("TE") ?? 0) >= 2) continue;
       if (receive.position === "WR" && (myPositionCounts.get("WR") ?? 0) >= 5) continue;
       const partnerBestQb = Math.max(0, ...partner.roster.filter((p) => p.position === "QB" && p.slot !== "IR").map((p) => p.projection ?? 0));
@@ -359,6 +388,8 @@ export function tradeRecommendations(roster: RosterPlayer[], partners: TradePart
         headline: `OFRECE ${give.name} A ${partner.name} POR ${receive.name}`,
         target: receive.name,
         alternative: give.name,
+        targetPlayerId: receive.canonicalPlayerId,
+        alternativePlayerId: give.canonicalPlayerId,
         partner: partner.name,
         confidence: valueScore >= 9 ? "HIGH" as const : valueScore >= 7 ? "MEDIUM" as const : "LOW" as const,
         confidenceScore: valueScore,
@@ -372,6 +403,11 @@ export function tradeRecommendations(roster: RosterPlayer[], partners: TradePart
         priority: 4.2 + index / 100,
       };
     });
+}
+
+function projectionExists(player: RosterPlayer) {
+  if (player.decisionProfile?.projectionAvailable === false) return false;
+  return player.decisionProfile != null || player.projection != null;
 }
 
 const round = (value: number) => Math.round(value * 10) / 10;

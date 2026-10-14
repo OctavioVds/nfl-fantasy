@@ -1,0 +1,878 @@
+[
+  {
+    "name": "snap_share",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "route_participation",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "target_share",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "air_yards_share",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "catchable_pass_rate",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "catch_rate",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "drop_rate",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "outside_target_share",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "slot_target_share",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "inline_target_share",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "backfield_target_share",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "contested_catch_rate",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "rb_route_share",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "third_down_share",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "two_minute_share",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "goal_line_share",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "goal_line_one_share",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "red_zone_share",
+    "block": "volume",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "snaps",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "routes",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "targets",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "carries",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "receptions",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "red_zone_targets",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "end_zone_targets",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "red_zone_touches",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "goal_line_carries",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "inside_one_carries",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "inside_ten_carries",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "expected_plays",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "expected_dropbacks",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "expected_targets",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "expected_carries",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "expected_routes",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "expected_snaps",
+    "block": "volume",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "tprr",
+    "block": "efficiency",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "short_yardage_conversion",
+    "block": "efficiency",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "wopr",
+    "block": "efficiency",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "separation",
+    "block": "efficiency",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "broken_tackles_per_attempt",
+    "block": "efficiency",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "elusive_rating",
+    "block": "efficiency",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "expected_touchdowns",
+    "block": "efficiency",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "touchdowns",
+    "block": "efficiency",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "td_dependence",
+    "block": "efficiency",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "adot",
+    "block": "efficiency",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "yac",
+    "block": "efficiency",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "yac_over_expected",
+    "block": "efficiency",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "yprr",
+    "block": "efficiency",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "yards_per_target",
+    "block": "efficiency",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "yards_per_carry",
+    "block": "efficiency",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "yco_per_attempt",
+    "block": "efficiency",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "created_yards",
+    "block": "efficiency",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "fppo",
+    "block": "efficiency",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "allowed_wr1_points",
+    "block": "matchup",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "allowed_wr2_points",
+    "block": "matchup",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "allowed_slot_points",
+    "block": "matchup",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "allowed_te_points",
+    "block": "matchup",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "allowed_rb_receiving_points",
+    "block": "matchup",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "allowed_rb_rushing_points",
+    "block": "matchup",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "allowed_points_adjusted",
+    "block": "matchup",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "sacks",
+    "block": "matchup",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "broken_tackles_allowed",
+    "block": "matchup",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "man_rate",
+    "block": "matchup",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "zone_rate",
+    "block": "matchup",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "blitz_rate",
+    "block": "matchup",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "pass_rush_win_rate",
+    "block": "matchup",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "pressure_rate",
+    "block": "matchup",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "cb_shadow_rate",
+    "block": "matchup",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "run_stuff_rate",
+    "block": "matchup",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "run_success_rate",
+    "block": "matchup",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "loaded_box_rate",
+    "block": "matchup",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "light_box_rate",
+    "block": "matchup",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "pass_epa_allowed",
+    "block": "matchup",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "rush_epa_allowed",
+    "block": "matchup",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "yards_before_contact_allowed",
+    "block": "matchup",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "dvp_trend",
+    "block": "matchup",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "defense_adjusted_ratio",
+    "block": "matchup",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "qb_epa_per_dropback",
+    "block": "context",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "qb_cpoe",
+    "block": "context",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "qb_time_to_throw",
+    "block": "context",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "qb_pressure_performance",
+    "block": "context",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "proe",
+    "block": "context",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "spread",
+    "block": "context",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "implied_team_total",
+    "block": "context",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "game_script_mean",
+    "block": "context",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "referee_effect",
+    "block": "context",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "coordinator_rb_rotation",
+    "block": "context",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "coordinator_two_minute_share",
+    "block": "context",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "personnel_grouping_rate",
+    "block": "context",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "no_huddle_rate",
+    "block": "context",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "pace_seconds",
+    "block": "context",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "total",
+    "block": "context",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "wind_mph",
+    "block": "context",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "rain_mm",
+    "block": "context",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "snow_mm",
+    "block": "context",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "timezone_crossings",
+    "block": "context",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "international_travel_days",
+    "block": "context",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "rest_days",
+    "block": "context",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "temperature_f",
+    "block": "context",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "altitude_ft",
+    "block": "context",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "motivation",
+    "block": "context",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "pass_block_win_rate",
+    "block": "context",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "run_block_win_rate",
+    "block": "context",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "offensive_line_continuity",
+    "block": "context",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "offensive_line_absences",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "backup_tackles",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "backup_guards",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "defensive_line_absences",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "defensive_secondary_absences",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "defensive_linebacker_absences",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "practice_dnp",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "practice_lp",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "practice_fp",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "injury_history_count",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "return_snap_limit",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "short_week",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "extra_rest",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "bye",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "dome",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "turf",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "active",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "official_inactive",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "qb_changed",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "coordinator_changed",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "team_changed",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "contract_changed",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "rookie",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "depth_rank",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "depth_rank_change",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "age",
+    "block": "availability",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "prob_play",
+    "block": "availability",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "market_projection",
+    "block": "market",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "consensus_projection",
+    "block": "market",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "espn_projection",
+    "block": "market",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "sportsdataio_projection",
+    "block": "market",
+    "percent": false,
+    "signed": true
+  },
+  {
+    "name": "snap_share_previous",
+    "block": "anomaly",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "snap_share_recent",
+    "block": "anomaly",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "route_participation_recent",
+    "block": "anomaly",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "target_share_recent",
+    "block": "anomaly",
+    "percent": true,
+    "signed": false
+  },
+  {
+    "name": "starter_practice_limited",
+    "block": "anomaly",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "expected_vacant_targets",
+    "block": "anomaly",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "expected_vacant_carries",
+    "block": "anomaly",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "expected_vacant_third_down",
+    "block": "anomaly",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "expected_vacant_goal_line",
+    "block": "anomaly",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "role_change_confirmed",
+    "block": "anomaly",
+    "percent": false,
+    "signed": false
+  },
+  {
+    "name": "starter_fppo",
+    "block": "anomaly",
+    "percent": false,
+    "signed": true
+  }
+]

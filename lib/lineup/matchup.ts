@@ -1,5 +1,5 @@
 import { buildDecisionProfile, optimizeLineup } from "../engine";
-import { isStale } from "../time";
+import { isStale, nflPeriod } from "../time";
 import type { PlayerDecisionProfile, RosterPlayer, SourceRef } from "../types";
 import { parseMatchupSignals, type MatchupSignal } from "./schemas";
 
@@ -28,6 +28,9 @@ export interface MatchupProfile {
   factors: string[];
   missing: string[];
   sources: SourceRef[];
+  projectionAvailable?: boolean;
+  estimated?: boolean;
+  method?: string;
 }
 
 export type MatchupLineupPlayer = RosterPlayer & { matchupProfile: MatchupProfile };
@@ -57,20 +60,26 @@ export function calculateMatchupProfile(
   player: RosterPlayer,
   inputSignals: unknown = [],
   now = new Date(),
+  period = nflPeriod(now),
 ): MatchupProfile {
   const { signals, rejectedCount } = parseMatchupSignals(inputSignals);
-  const baseline = projectionRange(player);
   const usage = player.decisionProfile ?? buildDecisionProfile(player);
+  const baseline = projectionRange({ ...player, decisionProfile: usage });
   const roleWeight = getRoleWeight(player.position, usage);
   const expected = expectedSignals[player.position];
   const missing = expected.filter((kind) => !signals.some((signal) => signal.kind === kind)).map((kind) => `no disponible: ${kind}`);
   const usedByKind = new Map<MatchupSignal["kind"], MatchupSignal[]>();
   const staleKinds = new Set<MatchupSignal["kind"]>();
+  const wrongPeriodKinds = new Set<MatchupSignal["kind"]>();
   const fresh = signals.filter((signal) => {
     const fetched = Date.parse(signal.source.fetchedAt);
     const isFuture = !Number.isFinite(fetched) || fetched > now.getTime() + 5 * 60_000;
-    if (isFuture || isStale(signal.source.fetchedAt, MATCHUP_SOURCE_TTL_MS, now)) {
+    if (isFuture || isStale(signal.source.fetchedAt, MATCHUP_SOURCE_TTL_MS, now) || isStale(signal.source.sourceTimestamp, MATCHUP_SOURCE_TTL_MS, now)) {
       staleKinds.add(signal.kind);
+      return false;
+    }
+    if (signal.source.season !== period.season || signal.source.week !== period.week) {
+      wrongPeriodKinds.add(signal.kind);
       return false;
     }
     return expected.includes(signal.kind);
@@ -99,6 +108,7 @@ export function calculateMatchupProfile(
     const label = `fuente vencida: ${kind}`;
     if (!missing.includes(label)) missing.push(label);
   }
+  for (const kind of wrongPeriodKinds) missing.push(`periodo distinto: ${kind}`);
   if (rejectedCount) missing.push(`${rejectedCount} señal(es) inválida(s) descartada(s)`);
   if (roleWeight === 0 && ["QB", "RB", "WR", "TE"].includes(player.position)) missing.push("uso del jugador no disponible");
 
@@ -118,6 +128,9 @@ export function calculateMatchupProfile(
 
   return {
     ...adjusted,
+    projectionAvailable: usage.projectionAvailable !== false,
+    estimated: true,
+    method: "normalized matchup heuristic with sample shrinkage; range is not calibrated",
     adjustmentPct: round(adjustmentPct),
     confidence,
     roleWeight: round(roleWeight),
@@ -148,7 +161,7 @@ export function optimizeMatchupAwareLineup(players: RosterPlayer[], options: Mat
       floor: profile.floor,
       median: profile.median,
       ceiling: profile.ceiling,
-      confidence: profile.confidence || base.confidence,
+      confidence: profile.confidence,
       hiddenFactor: profile.factors[0] ?? base.hiddenFactor,
       missing: [...new Set([...base.missing, ...profile.missing])],
     };
@@ -201,8 +214,8 @@ export function probabilityOutscores(
 }
 
 function projectionRange(player: RosterPlayer) {
-  const median = Math.max(0, player.decisionProfile?.median ?? player.projection ?? 0);
-  const floor = clamp(player.decisionProfile?.floor ?? player.floor ?? median, 0, median);
+  const median = player.decisionProfile?.median ?? player.projection ?? 0;
+  const floor = Math.min(player.decisionProfile?.floor ?? player.floor ?? median, median);
   const ceiling = Math.max(median, player.decisionProfile?.ceiling ?? player.ceiling ?? median);
   return { floor, median, ceiling };
 }
@@ -232,9 +245,11 @@ function getRoleWeight(position: RosterPlayer["position"], profile: PlayerDecisi
 function adjustRange(range: { floor: number; median: number; ceiling: number }, adjustment: number) {
   const floorFactor = adjustment < 0 ? 1.2 : 0.65;
   const ceilingFactor = adjustment > 0 ? 1.2 : 0.65;
-  const median = Math.max(0, range.median * (1 + adjustment));
-  const floor = Math.max(0, Math.min(median, range.floor * (1 + adjustment * floorFactor)));
-  const ceiling = Math.max(median, range.ceiling * (1 + adjustment * ceilingFactor));
+  const median = range.median + Math.abs(range.median) * adjustment;
+  const low = range.floor + Math.abs(range.floor) * adjustment * floorFactor;
+  const high = range.ceiling + Math.abs(range.ceiling) * adjustment * ceilingFactor;
+  const floor = Math.min(median, low, high);
+  const ceiling = Math.max(median, low, high);
   return { floor: round(floor), median: round(median), ceiling: round(ceiling) };
 }
 
@@ -246,12 +261,17 @@ export function strategyScore(profile: MatchupProfile, strategy: LineupStrategy)
 
 function availableRange(player: RosterPlayer): { floor: number; median: number; ceiling: number } | null {
   const matchupProfile = (player as Partial<MatchupLineupPlayer>).matchupProfile;
-  if (matchupProfile) return matchupProfile;
-  if (player.decisionProfile) return player.decisionProfile;
+  if (matchupProfile) return matchupProfile.projectionAvailable === false || !validRange(matchupProfile) ? null : matchupProfile;
+  if (player.decisionProfile) return player.decisionProfile.projectionAvailable === false || !validRange(player.decisionProfile) ? null : player.decisionProfile;
   if (player.projection != null && player.floor != null && player.ceiling != null) {
-    return { floor: player.floor, median: player.projection, ceiling: player.ceiling };
+    const range = { floor: player.floor, median: player.projection, ceiling: player.ceiling };
+    return validRange(range) ? range : null;
   }
   return null;
+}
+
+function validRange(range: { floor: number; median: number; ceiling: number }) {
+  return [range.floor, range.median, range.ceiling].every(Number.isFinite) && range.floor <= range.median && range.median <= range.ceiling;
 }
 
 function triangular(range: { floor: number; median: number; ceiling: number }, uniform: number) {

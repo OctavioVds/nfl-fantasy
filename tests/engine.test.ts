@@ -168,3 +168,59 @@ describe("decision range", () => {
     expect(rows.find((row) => row.name === "A")?.games[0].targetShare).toBe(0.4);
   });
 });
+
+describe("audited decision regressions", () => {
+  const p = (id: string, position: RosterPlayer["position"], projection: number | undefined, slot = "Bench", extra: Partial<RosterPlayer> = {}): RosterPlayer => ({ canonicalPlayerId: `test:${id}`, name: id, team: "X", position, projection, slot, ...extra });
+  const starters = () => [p("q", "QB", 20, "QB"), p("r1", "RB", 14, "RB"), p("r2", "RB", 17, "RB"), p("w1", "WR", 15, "WR"), p("w2", "WR", 14, "WR"), p("flex", "WR", 13, "RB/WR"), p("t", "TE", 10, "TE"), p("d", "DST", 8, "DST"), p("k", "K", 7, "K")];
+
+  it("recommends a healthy replacement for OUT despite lower raw projection", () => {
+    const roster = starters().map((player) => player.name === "r1" ? { ...player, injury: "OUT" } : player);
+    roster.push(p("healthy", "RB", 12));
+    const moves = topLineupRecommendations(roster);
+    expect(moves).toHaveLength(1);
+    expect(moves[0]).toMatchObject({ target: "healthy", alternative: "r1", targetPlayerId: "test:healthy", alternativePlayerId: "test:r1" });
+    expect(moves[0].lineupChanges).toContainEqual({ playerId: "test:healthy", name: "healthy", fromSlot: "Bench", toSlot: "RB" });
+  });
+
+  it("pairs each addition with a different player removed by the complete lineup", () => {
+    const roster = [p("q", "QB", 20, "QB"), p("low-r", "RB", 2, "RB"), p("r2", "RB", 18, "RB"), p("w1", "WR", 10, "WR"), p("w2", "WR", 9, "WR"), p("flex-r", "RB", 8, "RB/WR"), p("t", "TE", 10, "TE"), p("d", "DST", 8, "DST"), p("k", "K", 7, "K"), p("new-w1", "WR", 30), p("new-w2", "WR", 25)];
+    const optimizedIds = new Set(optimizeLineup(roster).map((player) => player.canonicalPlayerId));
+    const moves = topLineupRecommendations(roster);
+    expect(moves).toHaveLength(2);
+    expect(new Set(moves.map((move) => move.alternativePlayerId)).size).toBe(2);
+    expect(moves.every((move) => !optimizedIds.has(move.alternativePlayerId!))).toBe(true);
+    expect(moves[0].lineupChanges).toContainEqual({ playerId: "test:flex-r", name: "flex-r", fromSlot: "RB/WR", toSlot: "RB" });
+  });
+
+  it("never offers current starters when a partial roster prevents full optimization", () => {
+    const roster = starters().filter((player) => player.name !== "flex");
+    const partner = { teamId: "other", name: "Other", roster: [p("their-q", "QB", 8, "QB"), p("their-r", "RB", 20, "RB")] };
+    expect(optimizeLineup(roster)).toEqual([]);
+    expect(tradeRecommendations(roster, [partner])).toEqual([]);
+  });
+
+  it("does not trade the only healthy quarterback merely because he is on the bench", () => {
+    const partner = { teamId: "other", name: "Other", roster: [p("their-q", "QB", 8, "QB"), p("their-r", "RB", 20)] };
+    expect(tradeRecommendations([p("only-q", "QB", 20)], [partner])).toEqual([]);
+  });
+
+  it("preserves negative DST points with ordered, explicitly heuristic ranges", () => {
+    const profile = buildDecisionProfile(p("negative-d", "DST", -4, "DST"));
+    expect(profile.median).toBe(-4);
+    expect(profile.floor).toBeLessThanOrEqual(profile.median);
+    expect(profile.ceiling).toBeGreaterThanOrEqual(profile.median);
+    expect(profile).toMatchObject({ projectionAvailable: true, estimated: true });
+    expect(profile.method).toContain("not a calibrated percentile");
+    const aggregate = aggregateProjections([{ canonicalPlayerId: "test:negative-d", name: "negative-d", team: "X", position: "DST", points: -4, source: "test" }]);
+    expect(aggregate).toMatchObject({ median: -4, floor: -5.2, ceiling: -2.8, estimated: true });
+  });
+
+  it("marks an absent projection unavailable and cannot promote it through optimistic context", () => {
+    const unknown = p("unknown", "WR", undefined, "Bench", { opportunityScore: 100, depthOrder: 1 });
+    const profile = buildDecisionProfile(unknown);
+    expect(profile).toMatchObject({ projectionAvailable: false, confidence: 0 });
+    expect(profile.unavailableReason).toBeTruthy();
+    expect(profile.missing).toContain("proyección e historial de puntos");
+    expect(waiverRecommendations([p("drop", "WR", 2)], [{ ...unknown, slot: "FA", decisionProfile: profile }])).toEqual([]);
+  });
+});

@@ -35,6 +35,25 @@ describe("matchup signal validation", () => {
     expect(profile.adjustmentPct).toBe(0);
     expect(profile.missing).toContain("fuente vencida: pass-defense");
   });
+  it("does not refresh old evidence by giving it a new fetchedAt", () => {
+    const old = signal("pass-defense", 1, 20);
+    old.source.sourceTimestamp = "2026-09-20T17:00:00Z";
+    const profile = calculateMatchupProfile(player("Receiver", "WR", 12), [old], now);
+    expect(profile.adjustmentPct).toBe(0);
+    expect(profile.sources).toEqual([]);
+    expect(profile.missing).toContain("fuente vencida: pass-defense");
+  });
+  it("rejects fresh-looking signals belonging to another week or season", () => {
+    const wrongWeek = signal("pass-defense", 1, 20);
+    wrongWeek.source.week = 3;
+    const wrongSeason = signal("coverage", 1, 20);
+    wrongSeason.source.season = 2025;
+    const profile = calculateMatchupProfile(player("Receiver", "WR", 12), [wrongWeek, wrongSeason], now);
+    expect(profile.adjustmentPct).toBe(0);
+    expect(profile.sources).toEqual([]);
+    expect(profile.missing).toContain("periodo distinto: pass-defense");
+    expect(profile.missing).toContain("periodo distinto: coverage");
+  });
 });
 
 describe("matchup adjustment", () => {
@@ -127,5 +146,20 @@ describe("player comparison", () => {
     expect(first).toBe(probabilityOutscores(a, b, { iterations: 2_000, seed: 123 }));
     expect(first).toBeGreaterThan(50);
     expect(probabilityOutscores({ ...a, floor: undefined, ceiling: undefined }, b)).toBeNull();
+  });
+  it("returns null for invalid or explicitly unavailable ranges", () => {
+    const a = player("A", "WR", 15);
+    const b = player("B", "WR", 10);
+    expect(probabilityOutscores({ ...a, floor: 20 }, b)).toBeNull();
+    const unavailable = { ...a, decisionProfile: { floor: 0, median: 0, ceiling: 0, confidence: 0, sampleGames: 0, gameScript: "", hiddenFactor: "", missing: [], projectionAvailable: false } };
+    expect(probabilityOutscores(unavailable, b)).toBeNull();
+  });
+  it("keeps negative defense medians and ordered ranges when matchup evidence is absent", () => {
+    const defense = { ...player("Defense", "DST", -4), floor: -8, ceiling: 2 };
+    const profile = calculateMatchupProfile(defense, [], now);
+    expect(profile.median).toBe(-4);
+    expect(profile.floor).toBeLessThanOrEqual(profile.median);
+    expect(profile.ceiling).toBeGreaterThanOrEqual(profile.median);
+    expect(profile.estimated).toBe(true);
   });
 });

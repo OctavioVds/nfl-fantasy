@@ -1,5 +1,13 @@
 # Decisiones y excepciones
 
+## Resoluciones posteriores a la auditoría
+
+- Neon/Vercel se conectaron; Neon verificado y Vercel opera mediante CLI porque el token MCP carece del scope correcto. Migración003 se probó en rama aislada; producción permanece sin cambios de credenciales.
+- Se corrigieron los defectos de módulos anteriores con regresiones; siguen parciales respecto a sus especificaciones completas (slots universales, simulación trade completa y OAuth vivo pendiente). El core no acredita automáticamente esos módulos completos.
+- WAR se compara con el mejor FA válido, no con el N-ésimo FA, que produciría un reemplazo artificialmente bajo. ROS/playoffs quedan en unidades semanales medias compatibles con el legado; sdnullsin correlaciones.
+- Next.js se fija al parche16.3.8 y se actualizan sharp/source-map-js compatibles después de revisar npm audit. No se hace downgrade aNext14 ni fix--force para herramientas de desarrollo; vulnerabilidades restantes dev se registran en verificación. Sin exponer servidores de tests a terceros.
+- SportsDataIO trial devuelve datos alterados según [su explicación oficial](https://sportsdata.io/help/scrambled-data). Trial/test no se usa para acreditar precisión. Tavily [publica1,000créditos gratuitos/mes](https://www.tavily.com/pricing), útil como opción de noticias; no proporciona rutas/snaps ni proyecciones archivadas de esta liga.
+
 ## Fase 0 — 2026-10-14
 
 1. Los tres motores son parciales. Los prompts originales no están en repo; no se inventa certificación completa. Se pospone su reconstrucción total, se corrigen defectos negativos encontrados y se mantienen APIs existentes. Impacto: las heurísticas heredadas siguen provisionales y no deben presentarse como percentiles calibrados.

@@ -1,5 +1,6 @@
 import { MissingProviderCredentialsError, retry, withTimeout } from "../providers";
 import type { RecentGameUsage } from "../types";
+import { serverEnv } from "../env";
 
 export interface SportsDataProjection {
   providerId: string;
@@ -7,6 +8,9 @@ export interface SportsDataProjection {
   team: string;
   position: string;
   points: number;
+  scoringLabel?: "PPR" | "Yahoo" | "Standard" | "SportsDataIO DST";
+  fetchedAt?: string;
+  sourceTimestamp?: string;
   kickoff?: string;
   injury?: string;
   futureProjection?: number;
@@ -22,6 +26,7 @@ type SportsDataRow = {
   FantasyPoints?: number;
   GameDate?: string;
   InjuryStatus?: string;
+  Updated?: string;
 };
 
 type SportsDataGameRow = SportsDataRow & Record<string, unknown> & {
@@ -71,7 +76,7 @@ type SportsDataDefenseRow = {
 };
 
 export async function fetchSportsDataIoProjections(season: number, week: number): Promise<SportsDataProjection[]> {
-  const key = process.env.SPORTSDATAIO_API_KEY;
+  const key = serverEnv().SPORTSDATAIO_API_KEY;
   if (!key) throw new MissingProviderCredentialsError("SportsDataIO", "SPORTSDATAIO_API_KEY");
   const url = `https://api.sportsdata.io/v3/nfl/projections/json/PlayerGameProjectionStatsByWeek/${season}REG/${week}`;
   const response = await retry(() => withTimeout(fetch(url, {
@@ -80,12 +85,14 @@ export async function fetchSportsDataIoProjections(season: number, week: number)
   }), 8_000));
   if (!response.ok) throw new Error(`SportsDataIO ${response.status}`);
   const rows = await response.json() as SportsDataRow[];
+  const fetchedAt = new Date().toISOString();
   const players = rows.flatMap((row) => {
     const points = row.FantasyPointsPPR ?? row.FantasyPointsYahoo ?? row.FantasyPoints;
-    if (!row.Name || !row.Team || !row.Position || points == null) return [];
+    if (!row.Name || !row.Team || !row.Position || points == null || !Number.isFinite(points) || row.PlayerID == null || !Number.isFinite(row.PlayerID)) return [];
+    const scoringLabel = row.FantasyPointsPPR != null ? "PPR" as const : row.FantasyPointsYahoo != null ? "Yahoo" as const : "Standard" as const;
     return [{
-      providerId: String(row.PlayerID ?? row.Name), name: row.Name, team: row.Team,
-      position: row.Position, points, kickoff: row.GameDate ? new Date(row.GameDate).toISOString() : undefined,
+      providerId: String(row.PlayerID), name: row.Name, team: row.Team,
+      position: row.Position, points, scoringLabel, fetchedAt, sourceTimestamp: zonedTimestamp(row.Updated), kickoff: zonedTimestamp(row.GameDate),
       injury: row.InjuryStatus || undefined,
     }];
   });
@@ -98,11 +105,11 @@ export async function fetchSportsDataIoProjections(season: number, week: number)
     if (!defenseResponse.ok) return players;
     const defenses = await defenseResponse.json() as SportsDataDefenseRow[];
     return [...players, ...defenses.flatMap((row) => {
-      if (!row.Team || row.FantasyPoints == null) return [];
+      if (!row.Team || row.FantasyPoints == null || !Number.isFinite(row.FantasyPoints) || row.FantasyDefenseID == null || !Number.isFinite(row.FantasyDefenseID)) return [];
       return [{
-        providerId: String(row.FantasyDefenseID ?? row.Team), name: `${row.Team} D/ST`, team: row.Team,
-        position: "DST", points: row.FantasyPoints,
-        kickoff: row.DateTime ? new Date(row.DateTime).toISOString() : undefined,
+        providerId: String(row.FantasyDefenseID), name: `${row.Team} D/ST`, team: row.Team,
+        position: "DST", points: row.FantasyPoints, scoringLabel: "SportsDataIO DST" as const, fetchedAt: new Date().toISOString(),
+        kickoff: zonedTimestamp(row.DateTime),
       }];
     })];
   } catch {
@@ -127,8 +134,8 @@ export function mapSportsDataRecentUsage(rows: SportsDataGameRow[]): SportsDataR
   }
   const players = new Map<string, SportsDataRecentUsage>();
   for (const row of rows) {
-    if (!row.Name || !row.Team || !row.Position || row.Week == null) continue;
-    const key = `${row.Name.toLowerCase()}|${row.Team.toUpperCase()}`;
+    if (!row.Name || !row.Team || !row.Position || row.Week == null || row.PlayerID == null || !Number.isFinite(row.PlayerID)) continue;
+    const key = String(row.PlayerID);
     const teamTargets = teamTargetsByWeek.get(`${row.Team.toUpperCase()}|${row.Week}`);
     const carries = row.RushingAttempts;
     const receptions = row.Receptions;
@@ -157,7 +164,7 @@ export function mapSportsDataRecentUsage(rows: SportsDataGameRow[]): SportsDataR
       yprr: numberFrom(row, "ReceivingYardsPerRouteRun", "YardsPerRouteRun"),
       ycoPerAttempt: numberFrom(row, "RushingYardsAfterContactPerAttempt", "YardsAfterContactPerAttempt"),
     };
-    const existing = players.get(key) ?? { providerId: String(row.PlayerID ?? row.Name), name: row.Name, team: row.Team, position: row.Position, games: [] };
+    const existing = players.get(key) ?? { providerId: String(row.PlayerID), name: row.Name, team: row.Team, position: row.Position, games: [] };
     existing.games.push(game);
     players.set(key, existing);
   }
@@ -165,7 +172,7 @@ export function mapSportsDataRecentUsage(rows: SportsDataGameRow[]): SportsDataR
 }
 
 export async function fetchSportsDataIoRecentUsage(season: number, week: number): Promise<SportsDataRecentBundle> {
-  const key = process.env.SPORTSDATAIO_API_KEY;
+  const key = serverEnv().SPORTSDATAIO_API_KEY;
   if (!key) throw new MissingProviderCredentialsError("SportsDataIO", "SPORTSDATAIO_API_KEY");
   const completedWeeks = Array.from({ length: Math.min(3, Math.max(0, week - 1)) }, (_, index) => week - 1 - index);
   if (!completedWeeks.length) return { players: [], defenseAllowed: [] };
@@ -211,7 +218,7 @@ function sumDefined(...values: Array<number | undefined>) {
 }
 
 export async function fetchSportsDataIoInjuries(season: number, week: number): Promise<SportsDataInjury[]> {
-  const key = process.env.SPORTSDATAIO_API_KEY;
+  const key = serverEnv().SPORTSDATAIO_API_KEY;
   if (!key) throw new MissingProviderCredentialsError("SportsDataIO", "SPORTSDATAIO_API_KEY");
   const url = `https://api.sportsdata.io/v3/nfl/stats/json/Injuries/${season}REG/${week}`;
   const response = await retry(() => withTimeout(fetch(url, {
@@ -226,4 +233,11 @@ export async function fetchSportsDataIoInjuries(season: number, week: number): P
     if (!name || !team) return [];
     return [{ name, team, position: typeof row.Position === "string" ? row.Position : undefined, status: typeof row.Status === "string" ? row.Status : undefined, bodyPart: typeof row.BodyPart === "string" ? row.BodyPart : undefined }];
   });
+}
+
+/** Do not silently interpret provider-local datetimes as UTC/local machine time. */
+function zonedTimestamp(value: string | undefined) {
+  if (!value || !/(?:Z|[+-]\d{2}:\d{2})$/i.test(value)) return undefined;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : undefined;
 }
